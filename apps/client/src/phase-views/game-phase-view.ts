@@ -7,6 +7,8 @@ import type { RoomLayout } from '../layout.js';
 import type { RoomController } from '../room-controller.js';
 import type { RoomControllerState } from '../room-controller.js';
 import { UI_THEME } from '../theme.js';
+import { drawBoardSurface } from '../ui/canvas/board-surface.js';
+import { drawPlayerCircle } from '../ui/canvas/player-circle.js';
 
 interface GamePhaseViewDeps {
   scene: Phaser.Scene;
@@ -86,24 +88,36 @@ export class GamePhaseView {
 
   private drawBoard(board: Phaser.Geom.Rectangle, circles: Array<{ playerID: string; xRatio: number; yRatio: number }>) {
     this.boardGraphics.clear();
-    this.boardGraphics.fillGradientStyle(
-      UI_THEME.cardHighlightNumber,
-      UI_THEME.cardHighlightNumber,
-      UI_THEME.cardNumber,
-      UI_THEME.cardNumber,
-      1,
-    );
-    this.boardGraphics.fillRoundedRect(board.x, board.y, board.width, board.height, 36);
-    this.boardGraphics.lineStyle(4, UI_THEME.textNumber, 0.95);
-    this.boardGraphics.strokeRoundedRect(board.x, board.y, board.width, board.height, 36);
+    drawBoardSurface(this.boardGraphics, {
+      rect: board,
+      radius: 36,
+      fill: {
+        topLeft: UI_THEME.cardHighlightNumber,
+        topRight: UI_THEME.cardHighlightNumber,
+        bottomLeft: UI_THEME.cardNumber,
+        bottomRight: UI_THEME.cardNumber,
+        alpha: 1,
+      },
+      stroke: {
+        width: 4,
+        color: UI_THEME.textNumber,
+        alpha: 0.95,
+      },
+    });
 
     for (const circle of circles) {
       const x = board.x + circle.xRatio * board.width;
       const y = board.y + circle.yRatio * board.height;
-      this.boardGraphics.fillStyle(PLAYER_COLORS[circle.playerID] ?? 0xffffff, 0.95);
-      this.boardGraphics.fillCircle(x, y, 18);
-      this.boardGraphics.lineStyle(2, UI_THEME.backgroundNumber, 0.8);
-      this.boardGraphics.strokeCircle(x, y, 18);
+      drawPlayerCircle(this.boardGraphics, {
+        x,
+        y,
+        radius: 18,
+        fillColor: PLAYER_COLORS[circle.playerID] ?? 0xffffff,
+        fillAlpha: 0.95,
+        strokeColor: UI_THEME.backgroundNumber,
+        strokeWidth: 2,
+        strokeAlpha: 0.8,
+      });
     }
   }
 }

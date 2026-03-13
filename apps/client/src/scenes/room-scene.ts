@@ -1,33 +1,38 @@
 import Phaser from 'phaser';
 import type { RoomPhase, RoomSnapshot } from '@acatgame/game-core';
 
-import { createElement, HtmlOverlay } from '../html-ui.js';
 import { i18n, t } from '../i18n.js';
 import { layout } from '../layout.js';
 import { GamePhaseView } from '../phase-views/game-phase-view.js';
 import { getPlayerLabel } from '../player-label.js';
 import { roomController } from '../singletons.js';
 import { UI_THEME } from '../theme.js';
+import { createButton, type ButtonComponent } from '../ui/HTML/button.js';
+import { createCard, type CardComponent } from '../ui/HTML/card.js';
+import { createContainer, type ContainerComponent } from '../ui/HTML/container.js';
+import { OverlayRoot } from '../ui/HTML/overlay.js';
+import { createSpinner, type SpinnerComponent } from '../ui/HTML/spinner.js';
+import { createTextBlock, type TextBlockComponent } from '../ui/HTML/text-block.js';
 import { getUiErrorMessage, toUiError, type UiError } from '../ui-error.js';
 
 type CopyFeedbackState = 'default' | 'copied' | 'failed';
 
 export class RoomScene extends Phaser.Scene {
-  private overlay!: HtmlOverlay;
-  private centerCard!: HTMLDivElement;
-  private spinner!: HTMLDivElement;
-  private statusText!: HTMLParagraphElement;
-  private hintText!: HTMLParagraphElement;
-  private codeText!: HTMLParagraphElement;
-  private primaryButton!: HTMLButtonElement;
-  private secondaryButton!: HTMLButtonElement;
-  private centerErrorText!: HTMLParagraphElement;
-  private gameInfo!: HTMLDivElement;
-  private gameStatusText!: HTMLParagraphElement;
-  private gameMetaText!: HTMLParagraphElement;
-  private gameActions!: HTMLDivElement;
-  private gameLeaveButton!: HTMLButtonElement;
-  private gameErrorText!: HTMLParagraphElement;
+  private overlay!: OverlayRoot;
+  private centerCard!: CardComponent;
+  private spinner!: SpinnerComponent;
+  private statusText!: TextBlockComponent<HTMLParagraphElement>;
+  private hintText!: TextBlockComponent<HTMLParagraphElement>;
+  private codeText!: TextBlockComponent<HTMLParagraphElement>;
+  private primaryButton!: ButtonComponent;
+  private secondaryButton!: ButtonComponent;
+  private centerErrorText!: TextBlockComponent<HTMLParagraphElement>;
+  private gameInfo!: ContainerComponent<HTMLDivElement>;
+  private gameStatusText!: TextBlockComponent<HTMLParagraphElement>;
+  private gameMetaText!: TextBlockComponent<HTMLParagraphElement>;
+  private gameActions!: ContainerComponent<HTMLDivElement>;
+  private gameLeaveButton!: ButtonComponent;
+  private gameErrorText!: TextBlockComponent<HTMLParagraphElement>;
   private unsubscribe: (() => void) | null = null;
   private unsubscribeI18n: (() => void) | null = null;
   private boardView = new GamePhaseView();
@@ -57,43 +62,53 @@ export class RoomScene extends Phaser.Scene {
   }
 
   private createHtml() {
-    this.overlay = new HtmlOverlay();
+    this.overlay = new OverlayRoot();
 
-    this.centerCard = createElement('div', 'ui-card ui-card--room');
-    this.spinner = createElement('div', 'ui-spinner');
-    this.statusText = createElement('p', 'ui-status');
-    this.hintText = createElement('p', 'ui-hint');
-    this.codeText = createElement('p', 'ui-code');
-    this.primaryButton = createElement('button', 'ui-button');
-    this.primaryButton.type = 'button';
-    this.secondaryButton = createElement('button', 'ui-button ui-button--secondary');
-    this.secondaryButton.type = 'button';
-    this.centerErrorText = createElement('p', 'ui-error');
-    this.centerCard.append(
-      this.spinner,
-      this.statusText,
-      this.hintText,
-      this.codeText,
-      this.primaryButton,
-      this.secondaryButton,
-      this.centerErrorText,
+    this.centerCard = createCard({ className: 'ui-card--room', visible: false });
+    this.spinner = createSpinner();
+    this.statusText = createTextBlock({ variant: 'status' });
+    this.hintText = createTextBlock({ variant: 'hint' });
+    this.codeText = createTextBlock({ variant: 'code' });
+    this.primaryButton = createButton();
+    this.secondaryButton = createButton({ variant: 'secondary', visible: false });
+    this.centerErrorText = createTextBlock({ variant: 'error' });
+    this.centerCard.element.append(
+      this.spinner.element,
+      this.statusText.element,
+      this.hintText.element,
+      this.codeText.element,
+      this.primaryButton.element,
+      this.secondaryButton.element,
+      this.centerErrorText.element,
     );
 
-    this.gameInfo = createElement('div', 'ui-game-info');
-    this.gameStatusText = createElement('p', 'ui-game-status');
-    this.gameMetaText = createElement('p', 'ui-game-meta');
-    this.gameInfo.append(this.gameStatusText, this.gameMetaText);
-
-    this.gameActions = createElement('div', 'ui-game-actions');
-    this.gameLeaveButton = createElement('button', 'ui-button ui-button--secondary');
-    this.gameLeaveButton.type = 'button';
-    this.gameLeaveButton.addEventListener('click', () => {
-      void this.handleLeave();
+    this.gameInfo = createContainer('div', {
+      className: 'ui-game-info',
+      display: 'flex',
+      visible: false,
     });
-    this.gameErrorText = createElement('p', 'ui-error');
-    this.gameActions.append(this.gameLeaveButton, this.gameErrorText);
+    this.gameStatusText = createTextBlock({
+      variant: 'status',
+      className: 'ui-game-status',
+    });
+    this.gameMetaText = createTextBlock({ variant: 'meta' });
+    this.gameInfo.element.append(this.gameStatusText.element, this.gameMetaText.element);
 
-    this.overlay.element.append(this.centerCard, this.gameInfo, this.gameActions);
+    this.gameActions = createContainer('div', {
+      className: 'ui-game-actions',
+      display: 'flex',
+      visible: false,
+    });
+    this.gameLeaveButton = createButton({
+      variant: 'secondary',
+      onClick: () => {
+        void this.handleLeave();
+      },
+    });
+    this.gameErrorText = createTextBlock({ variant: 'error' });
+    this.gameActions.element.append(this.gameLeaveButton.element, this.gameErrorText.element);
+
+    this.overlay.element.append(this.centerCard.element, this.gameInfo.element, this.gameActions.element);
   }
 
   private renderView() {
@@ -117,82 +132,93 @@ export class RoomScene extends Phaser.Scene {
     const errorMessage = getUiErrorMessage(this.localError ?? state.error);
     const centerWidth = Math.min(560, roomLayout.contentWidth);
 
-    this.centerCard.style.display = 'none';
-    this.gameInfo.style.display = 'none';
-    this.gameActions.style.display = 'none';
-    this.centerCard.style.width = `${centerWidth}px`;
-    this.primaryButton.onclick = null;
-    this.secondaryButton.onclick = null;
+    this.centerCard.setVisible(false);
+    this.gameInfo.setVisible(false);
+    this.gameActions.setVisible(false);
+    this.centerCard.setWidth(centerWidth);
+    this.primaryButton.setOnClick(null);
+    this.secondaryButton.setOnClick(null);
 
     if (phase === 'waiting') {
-      this.centerCard.style.display = 'flex';
-      this.spinner.style.display = 'block';
-      this.hintText.style.display = 'block';
-      this.codeText.style.display = snapshot?.matchID ? 'block' : 'none';
-      this.secondaryButton.style.display = 'none';
-      this.statusText.textContent = snapshot ? t('waiting.waitingForPlayers') : t('waiting.loadingRoom');
-      this.hintText.textContent = t('waiting.hint');
-      this.codeText.textContent = snapshot?.matchID ?? '';
-      this.primaryButton.textContent = this.getCopyButtonLabel();
-      this.primaryButton.onclick = () => {
+      this.centerCard.setVisible(true);
+      this.spinner.setVisible(true);
+      this.hintText.setVisible(true);
+      this.codeText.setVisible(Boolean(snapshot?.matchID));
+      this.primaryButton.setVisible(true);
+      this.secondaryButton.setVisible(false);
+      this.statusText.setText(snapshot ? t('waiting.waitingForPlayers') : t('waiting.loadingRoom'));
+      this.hintText.setText(t('waiting.hint'));
+      this.codeText.setText(snapshot?.matchID ?? '');
+      this.primaryButton.setText(this.getCopyButtonLabel());
+      this.primaryButton.setOnClick(() => {
         void this.handleCopy();
-      };
-      this.centerErrorText.textContent = errorMessage;
+      });
+      this.centerErrorText.setText(errorMessage);
       return;
     }
 
     if (phase === 'ready') {
-      this.centerCard.style.display = 'flex';
+      this.centerCard.setVisible(true);
       const isReady = !!(snapshot && state.session && snapshot.readyByPlayer[state.session.playerID]);
-      this.spinner.style.display = 'block';
-      this.hintText.style.display = 'none';
-      this.codeText.style.display = 'none';
-      this.secondaryButton.style.display = 'block';
-      this.statusText.textContent = isReady ? t('ready.waitingForSecondPlayer') : t('ready.pressReady');
-      this.primaryButton.textContent = isReady ? t('actions.cancel') : t('actions.ready');
-      this.secondaryButton.textContent = t('actions.leaveRoom');
-      this.primaryButton.onclick = () => {
+      this.spinner.setVisible(true);
+      this.hintText.setVisible(false);
+      this.codeText.setVisible(false);
+      this.primaryButton.setVisible(true);
+      this.secondaryButton.setVisible(true);
+      this.statusText.setText(isReady ? t('ready.waitingForSecondPlayer') : t('ready.pressReady'));
+      this.primaryButton.setText(isReady ? t('actions.cancel') : t('actions.ready'));
+      this.secondaryButton.setText(t('actions.leaveRoom'));
+      this.primaryButton.setOnClick(() => {
         void this.handleReadyToggle();
-      };
-      this.secondaryButton.onclick = () => {
+      });
+      this.secondaryButton.setOnClick(() => {
         void this.handleLeave();
-      };
-      this.centerErrorText.textContent = errorMessage;
+      });
+      this.centerErrorText.setText(errorMessage);
       return;
     }
 
-    this.gameInfo.style.display = 'flex';
-    this.gameActions.style.display = 'flex';
-    this.gameInfo.style.left = `${roomLayout.centerX}px`;
-    this.gameInfo.style.top = `${roomLayout.board.y - 74}px`;
-    this.gameInfo.style.width = `${roomLayout.board.width}px`;
-    this.gameActions.style.left = `${roomLayout.centerX}px`;
-    this.gameActions.style.top = `${roomLayout.board.bottom + 28}px`;
-    this.gameActions.style.width = `${Math.min(320, roomLayout.board.width)}px`;
-    this.gameLeaveButton.textContent = t('actions.leaveRoom');
-    this.gameErrorText.textContent = errorMessage;
+    this.spinner.setVisible(false);
+    this.hintText.setVisible(false);
+    this.codeText.setVisible(false);
+    this.primaryButton.setVisible(false);
+    this.secondaryButton.setVisible(false);
+    this.gameInfo.setVisible(true);
+    this.gameActions.setVisible(true);
+    this.gameInfo.setStyles({
+      left: `${roomLayout.centerX}px`,
+      top: `${roomLayout.board.y - 74}px`,
+      width: `${roomLayout.board.width}px`,
+    });
+    this.gameActions.setStyles({
+      left: `${roomLayout.centerX}px`,
+      top: `${roomLayout.board.bottom + 28}px`,
+      width: `${Math.min(320, roomLayout.board.width)}px`,
+    });
+    this.gameLeaveButton.setText(t('actions.leaveRoom'));
+    this.gameErrorText.setText(errorMessage);
 
     const scores = state.gameState?.G?.scoreByPlayer ?? snapshot?.scores ?? { '0': 0, '1': 0 };
     const winner = snapshot?.winner ?? state.gameState?.G?.winner ?? null;
 
     if (!snapshot) {
-      this.gameStatusText.textContent = t('game.syncing');
-      this.gameMetaText.textContent = t('game.score', { left: 0, right: 0 });
+      this.gameStatusText.setText(t('game.syncing'));
+      this.gameMetaText.setText(t('game.score', { left: 0, right: 0 }));
       return;
     }
 
     if (winner) {
-      this.gameStatusText.textContent = t('game.winner', { player: getPlayerLabel(winner) });
-      this.gameMetaText.textContent = t('game.finalScore', { left: scores['0'] ?? 0, right: scores['1'] ?? 0 });
+      this.gameStatusText.setText(t('game.winner', { player: getPlayerLabel(winner) }));
+      this.gameMetaText.setText(t('game.finalScore', { left: scores['0'] ?? 0, right: scores['1'] ?? 0 }));
       return;
     }
 
-    this.gameStatusText.textContent = t('game.matchActive');
-    this.gameMetaText.textContent = t('game.currentTurnScore', {
+    this.gameStatusText.setText(t('game.matchActive'));
+    this.gameMetaText.setText(t('game.currentTurnScore', {
       player: getPlayerLabel(snapshot.currentPlayer ?? '0'),
       left: scores['0'] ?? 0,
       right: scores['1'] ?? 0,
-    });
+    }));
   }
 
   private async handleCopy() {

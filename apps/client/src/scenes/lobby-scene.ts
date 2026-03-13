@@ -1,21 +1,25 @@
 import Phaser from 'phaser';
 
-import { createElement, HtmlOverlay } from '../html-ui.js';
 import { i18n, t } from '../i18n.js';
 import { layout } from '../layout.js';
 import { roomController } from '../singletons.js';
 import { UI_THEME } from '../theme.js';
+import { createButton, type ButtonComponent } from '../ui/HTML/button.js';
+import { createCard, type CardComponent } from '../ui/HTML/card.js';
+import { OverlayRoot } from '../ui/HTML/overlay.js';
+import { createTextBlock, type TextBlockComponent } from '../ui/HTML/text-block.js';
+import { createTextInput, type TextInputComponent } from '../ui/HTML/text-input.js';
 import { getUiErrorMessage, toUiError, type UiError } from '../ui-error.js';
 
 export class LobbyScene extends Phaser.Scene {
-  private overlay!: HtmlOverlay;
-  private panel!: HTMLDivElement;
-  private title!: HTMLHeadingElement;
-  private subtitle!: HTMLParagraphElement;
-  private roomCodeInput!: HTMLInputElement;
-  private joinButton!: HTMLButtonElement;
-  private createButton!: HTMLButtonElement;
-  private errorText!: HTMLParagraphElement;
+  private overlay!: OverlayRoot;
+  private panel!: CardComponent;
+  private title!: TextBlockComponent<HTMLHeadingElement>;
+  private subtitle!: TextBlockComponent<HTMLParagraphElement>;
+  private roomCodeInput!: TextInputComponent;
+  private joinButton!: ButtonComponent;
+  private createButton!: ButtonComponent;
+  private errorText!: TextBlockComponent<HTMLParagraphElement>;
   private unsubscribeI18n: (() => void) | null = null;
   private currentError: UiError | null = null;
 
@@ -26,35 +30,38 @@ export class LobbyScene extends Phaser.Scene {
   create() {
     this.cameras.main.setBackgroundColor(UI_THEME.background);
 
-    this.overlay = new HtmlOverlay();
-    this.panel = createElement('div', 'ui-card');
-    this.title = createElement('h1', 'ui-title');
-    this.subtitle = createElement('p', 'ui-subtitle');
-    this.roomCodeInput = createElement('input', 'ui-input');
-    this.roomCodeInput.type = 'text';
-    this.roomCodeInput.maxLength = 64;
-    this.roomCodeInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
+    this.overlay = new OverlayRoot();
+    this.panel = createCard();
+    this.title = createTextBlock({ variant: 'title', tagName: 'h1' });
+    this.subtitle = createTextBlock({ variant: 'subtitle' });
+    this.roomCodeInput = createTextInput({
+      maxLength: 64,
+      onEnter: () => {
         void this.handleJoin();
-      }
+      },
     });
-
-    this.joinButton = createElement('button', 'ui-button');
-    this.joinButton.type = 'button';
-    this.joinButton.addEventListener('click', () => {
-      void this.handleJoin();
+    this.joinButton = createButton({
+      onClick: () => {
+        void this.handleJoin();
+      },
     });
-
-    this.createButton = createElement('button', 'ui-button ui-button--secondary');
-    this.createButton.type = 'button';
-    this.createButton.addEventListener('click', () => {
-      void this.handleCreate();
+    this.createButton = createButton({
+      variant: 'secondary',
+      onClick: () => {
+        void this.handleCreate();
+      },
     });
+    this.errorText = createTextBlock({ variant: 'error' });
 
-    this.errorText = createElement('p', 'ui-error');
-
-    this.panel.append(this.title, this.subtitle, this.roomCodeInput, this.joinButton, this.createButton, this.errorText);
-    this.overlay.element.appendChild(this.panel);
+    this.panel.element.append(
+      this.title.element,
+      this.subtitle.element,
+      this.roomCodeInput.element,
+      this.joinButton.element,
+      this.createButton.element,
+      this.errorText.element,
+    );
+    this.overlay.element.appendChild(this.panel.element);
 
     this.unsubscribeI18n = i18n.subscribe(() => this.renderTexts());
     this.scale.on('resize', this.relayout, this);
@@ -80,7 +87,7 @@ export class LobbyScene extends Phaser.Scene {
     try {
       this.currentError = null;
       this.renderTexts();
-      await roomController.joinRoom(this.roomCodeInput.value);
+      await roomController.joinRoom(this.roomCodeInput.element.value);
       this.scene.start('RoomScene');
     } catch (error) {
       this.currentError = toUiError(error, 'unable_join_room');
@@ -89,17 +96,17 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   private renderTexts() {
-    this.title.textContent = t('lobby.title');
-    this.subtitle.textContent = t('lobby.subtitle');
-    this.roomCodeInput.placeholder = t('lobby.roomCodePlaceholder');
-    this.joinButton.textContent = t('actions.joinRoom');
-    this.createButton.textContent = t('actions.createRoom');
-    this.errorText.textContent = getUiErrorMessage(this.currentError);
+    this.title.setText(t('lobby.title'));
+    this.subtitle.setText(t('lobby.subtitle'));
+    this.roomCodeInput.setPlaceholder(t('lobby.roomCodePlaceholder'));
+    this.joinButton.setText(t('actions.joinRoom'));
+    this.createButton.setText(t('actions.createRoom'));
+    this.errorText.setText(getUiErrorMessage(this.currentError));
   }
 
   private relayout() {
     const lobbyLayout = layout.getLobbyLayout(this);
-    this.panel.style.width = `${lobbyLayout.panelWidth}px`;
+    this.panel.setWidth(lobbyLayout.panelWidth);
   }
 
   private onShutdown() {
