@@ -20,14 +20,22 @@ interface ReadyCardView {
   id: number;
   container: Phaser.GameObjects.Container;
   hitArea: Phaser.GameObjects.Rectangle;
-  glow: Phaser.GameObjects.Rectangle;
-  shadow: Phaser.GameObjects.Rectangle;
-  face: Phaser.GameObjects.Rectangle;
-  border: Phaser.GameObjects.Rectangle;
+  glow: Phaser.GameObjects.Image;
+  shadow: Phaser.GameObjects.Image;
+  face: Phaser.GameObjects.Image;
+  border: Phaser.GameObjects.Image;
   sprite: Phaser.GameObjects.Sprite;
 }
 
 export class ReadyPhaseView {
+  private static readonly CARD_RADIUS = 14;
+  private static readonly CARD_SIZE = 98;
+  private static readonly CARD_FILL_TEXTURE_KEY = 'ready-card-fill';
+  private static readonly CARD_BORDER_TEXTURE_KEYS = {
+    normal: 'ready-card-border-2',
+    hover: 'ready-card-border-3',
+    selected: 'ready-card-border-4',
+  } as const;
   private scene!: Phaser.Scene;
   private controller!: RoomController;
   private boardGraphics!: Phaser.GameObjects.Graphics;
@@ -42,6 +50,7 @@ export class ReadyPhaseView {
     this.scene = deps.scene;
     this.controller = deps.controller;
     this.boardGraphics = this.scene.add.graphics();
+    this.ensureCardTextures();
 
     for (let cardID = 0; cardID < READY_CARD_POOL_SIZE; cardID += 1) {
       this.cards.push(this.createCard(cardID));
@@ -99,7 +108,7 @@ export class ReadyPhaseView {
     const selectionLimitReached = selectedCardIDs.length >= READY_CARD_SELECTION_LIMIT;
 
     const rows = Math.ceil(READY_CARD_POOL_SIZE / READY_CARD_COLUMNS);
-    const cardSize = 98;
+    const cardSize = ReadyPhaseView.CARD_SIZE;
     const cellGapX = 18;
     const cellGapY = 18;
     const totalGridWidth = READY_CARD_COLUMNS * cardSize + (READY_CARD_COLUMNS - 1) * cellGapX;
@@ -116,8 +125,9 @@ export class ReadyPhaseView {
       const isSelected = selectedCardIDSet.has(card.id);
       const canSelect = !readyLocked && (isSelected || !selectionLimitReached);
       const isHovered = this.hoveredCardID === card.id && canSelect;
-      const faceY = isSelected ? 4 : 0;
-      const shadowY = isSelected ? 7 : 10;
+      const faceY = isSelected ? 3 : 0;
+      const shadowY = 8;
+      const shadowSize = cardSize;
 
       card.container.setPosition(x, y);
       card.container.setSize(cardSize, cardSize);
@@ -125,25 +135,23 @@ export class ReadyPhaseView {
       card.hitArea.setPosition(0, 0);
       card.hitArea.setFillStyle(0xffffff, 0.001);
 
-      card.glow.setSize(cardSize + 10, cardSize + 10);
-      card.glow.setFillStyle(UI_THEME.accentSoftNumber, isSelected ? 0.22 : isHovered ? 0.16 : 0.05);
-      card.glow.setPosition(0, 3);
-
-      card.shadow.setSize(cardSize, cardSize);
+      card.shadow.setDisplaySize(shadowSize, shadowSize);
       card.shadow.setPosition(0, shadowY);
-      card.shadow.setFillStyle(isSelected ? 0xd89e4f : UI_THEME.textNumber, isSelected ? 0.22 : 0.16);
+      card.shadow.setTint(UI_THEME.textNumber);
+      card.shadow.setAlpha(0.18);
 
-      card.face.setSize(cardSize, cardSize);
+      card.face.setDisplaySize(cardSize, cardSize);
       card.face.setPosition(0, faceY);
-      card.face.setFillStyle(0xfff7de, readyLocked || canSelect ? 1 : 0.72);
+      card.face.setTint(0xfff7de);
+      card.face.setAlpha(readyLocked || canSelect ? 1 : 0.72);
 
-      card.border.setSize(cardSize, cardSize);
+      card.border.setDisplaySize(cardSize, cardSize);
       card.border.setPosition(0, faceY);
-      card.border.setStrokeStyle(
-        isSelected ? 4 : isHovered ? 3 : 2,
-        isSelected ? UI_THEME.accentNumber : isHovered ? UI_THEME.accentSoftNumber : UI_THEME.cardNumber,
-        readyLocked || canSelect ? 1 : 0.5,
+      card.border.setTexture(
+        isSelected ? ReadyPhaseView.CARD_BORDER_TEXTURE_KEYS.selected : ReadyPhaseView.CARD_BORDER_TEXTURE_KEYS.normal,
       );
+      card.border.setTint(this.getBorderTint(isSelected, isHovered));
+      card.border.setAlpha(readyLocked || canSelect ? 1 : 0.5);
 
       card.sprite.setPosition(0, faceY + 4);
       card.sprite.setScale(spriteScale);
@@ -152,12 +160,13 @@ export class ReadyPhaseView {
   }
 
   private createCard(cardID: number): ReadyCardView {
-    const hitArea = this.scene.add.rectangle(0, 0, 90, 90, 0xffffff, 0.001).setOrigin(0.5);
-    const glow = this.scene.add.rectangle(0, 0, 90, 90, UI_THEME.accentSoftNumber, 0.08).setOrigin(0.5);
-    const shadow = this.scene.add.rectangle(0, 10, 90, 90, UI_THEME.textNumber, 0.16).setOrigin(0.5);
-    const face = this.scene.add.rectangle(0, 0, 90, 90, 0xfff7de, 1).setOrigin(0.5);
-    const border = this.scene.add.rectangle(0, 0, 90, 90).setOrigin(0.5);
-    border.setStrokeStyle(2, UI_THEME.cardNumber, 0.95);
+    const hitArea = this.scene.add
+      .rectangle(0, 0, ReadyPhaseView.CARD_SIZE, ReadyPhaseView.CARD_SIZE, 0xffffff, 0.001)
+      .setOrigin(0.5);
+    const glow = this.scene.add.image(0, 0, ReadyPhaseView.CARD_FILL_TEXTURE_KEY).setOrigin(0.5);
+    const shadow = this.scene.add.image(0, 10, ReadyPhaseView.CARD_FILL_TEXTURE_KEY).setOrigin(0.5);
+    const face = this.scene.add.image(0, 0, ReadyPhaseView.CARD_FILL_TEXTURE_KEY).setOrigin(0.5);
+    const border = this.scene.add.image(0, 0, ReadyPhaseView.CARD_BORDER_TEXTURE_KEYS.normal).setOrigin(0.5);
 
     const sprite = this.scene.add.sprite(0, 4, getReadyCardBaseTexture(this.scene));
     sprite.play(READY_CARD_ANIMATION_KEY);
@@ -190,6 +199,55 @@ export class ReadyPhaseView {
       border,
       sprite,
     };
+  }
+
+  private ensureCardTextures() {
+    if (this.scene.textures.exists(ReadyPhaseView.CARD_FILL_TEXTURE_KEY)) {
+      return;
+    }
+
+    const fillGraphics = this.scene.make.graphics({ x: 0, y: 0 });
+    fillGraphics.fillStyle(0xffffff, 1);
+    fillGraphics.fillRoundedRect(
+      0,
+      0,
+      ReadyPhaseView.CARD_SIZE,
+      ReadyPhaseView.CARD_SIZE,
+      ReadyPhaseView.CARD_RADIUS,
+    );
+    fillGraphics.generateTexture(
+      ReadyPhaseView.CARD_FILL_TEXTURE_KEY,
+      ReadyPhaseView.CARD_SIZE,
+      ReadyPhaseView.CARD_SIZE,
+    );
+    fillGraphics.destroy();
+
+    this.generateBorderTexture(ReadyPhaseView.CARD_BORDER_TEXTURE_KEYS.normal, 2);
+    this.generateBorderTexture(ReadyPhaseView.CARD_BORDER_TEXTURE_KEYS.hover, 3);
+    this.generateBorderTexture(ReadyPhaseView.CARD_BORDER_TEXTURE_KEYS.selected, 4);
+  }
+
+  private generateBorderTexture(key: string, lineWidth: number) {
+    const graphics = this.scene.make.graphics({ x: 0, y: 0 });
+    const inset = lineWidth / 2;
+    graphics.lineStyle(lineWidth, 0xffffff, 1);
+    graphics.strokeRoundedRect(
+      inset,
+      inset,
+      ReadyPhaseView.CARD_SIZE - lineWidth,
+      ReadyPhaseView.CARD_SIZE - lineWidth,
+      ReadyPhaseView.CARD_RADIUS,
+    );
+    graphics.generateTexture(key, ReadyPhaseView.CARD_SIZE, ReadyPhaseView.CARD_SIZE);
+    graphics.destroy();
+  }
+
+  private getBorderTint(isSelected: boolean, isHovered: boolean) {
+    if (isSelected) {
+      return isHovered ? 0xa83838 : UI_THEME.accentBorderNumber;
+    }
+
+    return isHovered ? 0x5f978c : UI_THEME.cardBorderLightNumber;
   }
 
   private handleCardPressed(cardID: number) {
