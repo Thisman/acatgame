@@ -10,6 +10,8 @@ import {
 import { Client } from 'boardgame.io/client';
 import { SocketIO } from 'boardgame.io/multiplayer';
 
+import { UiError } from './ui-error.js';
+
 type BoardgameState = {
   G?: {
     circles?: RoomSnapshot['circles'];
@@ -27,7 +29,7 @@ export interface RoomControllerState {
   session: RoomSession | null;
   snapshot: RoomSnapshot | null;
   gameState: BoardgameState | null;
-  error: string | null;
+  error: UiError | null;
 }
 
 interface RequestOptions {
@@ -42,7 +44,7 @@ export class RoomController {
   private session: RoomSession | null = null;
   private snapshot: RoomSnapshot | null = null;
   private gameState: BoardgameState | null = null;
-  private error: string | null = null;
+  private error: UiError | null = null;
   private heartbeatTimer: number | null = null;
   private snapshotTimer: number | null = null;
 
@@ -71,7 +73,10 @@ export class RoomController {
     const normalized = matchID.trim();
 
     if (!normalized) {
-      throw new Error('Room code is required.');
+      const error = new UiError('room_code_required', 'Room code is required.');
+      this.error = error;
+      this.emit();
+      throw error;
     }
 
     const session = await this.request<RoomSession>(`/api/rooms/${normalized}/join`, {
@@ -263,11 +268,11 @@ export class RoomController {
     });
 
     if (!response.ok) {
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      const error = payload.error ?? 'Request failed.';
+      const payload = (await response.json().catch(() => ({}))) as { errorCode?: string; error?: string };
+      const error = new UiError(payload.errorCode ?? 'request_failed', payload.error ?? 'Request failed.');
       this.error = error;
       this.emit();
-      throw new Error(error);
+      throw error;
     }
 
     if (response.status === 204) {

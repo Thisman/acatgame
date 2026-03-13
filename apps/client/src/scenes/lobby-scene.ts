@@ -1,123 +1,111 @@
 import Phaser from 'phaser';
 
-import { TextButton } from '../button.js';
+import { createElement, HtmlOverlay } from '../html-ui.js';
+import { i18n, t } from '../i18n.js';
 import { layout } from '../layout.js';
 import { roomController } from '../singletons.js';
+import { UI_THEME } from '../theme.js';
+import { getUiErrorMessage, toUiError, type UiError } from '../ui-error.js';
 
 export class LobbyScene extends Phaser.Scene {
-  private title!: Phaser.GameObjects.Text;
-  private subtitle!: Phaser.GameObjects.Text;
-  private errorText!: Phaser.GameObjects.Text;
-  private createButton!: TextButton;
-  private joinButton!: TextButton;
-  private roomCodeInput!: Phaser.GameObjects.DOMElement;
-  private roomCodeField!: HTMLInputElement;
-  private roomCodeShell!: HTMLDivElement;
+  private overlay!: HtmlOverlay;
+  private panel!: HTMLDivElement;
+  private title!: HTMLHeadingElement;
+  private subtitle!: HTMLParagraphElement;
+  private roomCodeInput!: HTMLInputElement;
+  private joinButton!: HTMLButtonElement;
+  private createButton!: HTMLButtonElement;
+  private errorText!: HTMLParagraphElement;
+  private unsubscribeI18n: (() => void) | null = null;
+  private currentError: UiError | null = null;
 
   constructor() {
     super('LobbyScene');
   }
 
   create() {
-    this.cameras.main.setBackgroundColor('#f3f0e8');
+    this.cameras.main.setBackgroundColor(UI_THEME.background);
 
-    this.title = this.add.text(0, 0, 'ACatGame', {
-      color: '#6d7f78',
-      fontFamily: 'Trebuchet MS',
-      fontSize: '68px',
-      fontStyle: 'bold',
+    this.overlay = new HtmlOverlay();
+    this.panel = createElement('div', 'ui-card');
+    this.title = createElement('h1', 'ui-title');
+    this.subtitle = createElement('p', 'ui-subtitle');
+    this.roomCodeInput = createElement('input', 'ui-input');
+    this.roomCodeInput.type = 'text';
+    this.roomCodeInput.maxLength = 64;
+    this.roomCodeInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        void this.handleJoin();
+      }
     });
-    this.title.setOrigin(0.5);
 
-    this.subtitle = this.add.text(0, 0, 'Create a room or join by match ID', {
-      color: '#8d9d97',
-      fontFamily: 'Trebuchet MS',
-      fontSize: '24px',
-    });
-    this.subtitle.setOrigin(0.5);
-
-    this.roomCodeShell = document.createElement('div');
-    this.roomCodeShell.style.width = '560px';
-    this.roomCodeShell.style.height = '64px';
-    this.roomCodeShell.style.display = 'flex';
-    this.roomCodeShell.style.alignItems = 'center';
-    this.roomCodeShell.style.justifyContent = 'center';
-
-    this.roomCodeField = document.createElement('input');
-    this.roomCodeField.type = 'text';
-    this.roomCodeField.placeholder = 'Room code';
-    this.roomCodeField.maxLength = 64;
-    this.roomCodeField.style.width = '100%';
-    this.roomCodeField.style.height = '64px';
-    this.roomCodeField.style.padding = '18px 20px';
-    this.roomCodeField.style.borderRadius = '18px';
-    this.roomCodeField.style.border = '2px solid #b7c9c3';
-    this.roomCodeField.style.background = 'rgba(251, 249, 244, 0.98)';
-    this.roomCodeField.style.color = '#5c6d67';
-    this.roomCodeField.style.fontSize = '22px';
-    this.roomCodeField.style.outline = 'none';
-    this.roomCodeField.style.boxSizing = 'border-box';
-    this.roomCodeField.style.boxShadow = '0 12px 30px rgba(167, 182, 175, 0.18)';
-
-    this.roomCodeShell.appendChild(this.roomCodeField);
-
-    this.roomCodeInput = this.add.dom(0, 0, this.roomCodeShell);
-    this.roomCodeInput.setOrigin(0.5);
-
-    this.createButton = new TextButton(this, 0, 0, 260, 72, 'Create room', () => {
-      void this.handleCreate();
-    });
-    this.joinButton = new TextButton(this, 0, 0, 260, 72, 'Join room', () => {
+    this.joinButton = createElement('button', 'ui-button');
+    this.joinButton.type = 'button';
+    this.joinButton.addEventListener('click', () => {
       void this.handleJoin();
     });
 
-    this.errorText = this.add.text(0, 0, '', {
-      color: '#bf7f76',
-      fontFamily: 'Trebuchet MS',
-      fontSize: '22px',
-      align: 'center',
-      wordWrap: { width: 500 },
+    this.createButton = createElement('button', 'ui-button ui-button--secondary');
+    this.createButton.type = 'button';
+    this.createButton.addEventListener('click', () => {
+      void this.handleCreate();
     });
-    this.errorText.setOrigin(0.5);
 
+    this.errorText = createElement('p', 'ui-error');
+
+    this.panel.append(this.title, this.subtitle, this.roomCodeInput, this.joinButton, this.createButton, this.errorText);
+    this.overlay.element.appendChild(this.panel);
+
+    this.unsubscribeI18n = i18n.subscribe(() => this.renderTexts());
     this.scale.on('resize', this.relayout, this);
     this.events.on(Phaser.Scenes.Events.SHUTDOWN, this.onShutdown, this);
+
+    this.renderTexts();
     this.relayout();
   }
 
   private async handleCreate() {
     try {
-      this.errorText.setText('');
+      this.currentError = null;
+      this.renderTexts();
       await roomController.createRoom();
       this.scene.start('RoomScene');
     } catch (error) {
-      this.errorText.setText(error instanceof Error ? error.message : 'Unable to create room.');
+      this.currentError = toUiError(error, 'unable_create_room');
+      this.renderTexts();
     }
   }
 
   private async handleJoin() {
     try {
-      this.errorText.setText('');
-      await roomController.joinRoom(this.roomCodeField.value);
+      this.currentError = null;
+      this.renderTexts();
+      await roomController.joinRoom(this.roomCodeInput.value);
       this.scene.start('RoomScene');
     } catch (error) {
-      this.errorText.setText(error instanceof Error ? error.message : 'Unable to join room.');
+      this.currentError = toUiError(error, 'unable_join_room');
+      this.renderTexts();
     }
+  }
+
+  private renderTexts() {
+    this.title.textContent = t('lobby.title');
+    this.subtitle.textContent = t('lobby.subtitle');
+    this.roomCodeInput.placeholder = t('lobby.roomCodePlaceholder');
+    this.joinButton.textContent = t('actions.joinRoom');
+    this.createButton.textContent = t('actions.createRoom');
+    this.errorText.textContent = getUiErrorMessage(this.currentError);
   }
 
   private relayout() {
     const lobbyLayout = layout.getLobbyLayout(this);
-
-    this.title.setPosition(lobbyLayout.centerX, lobbyLayout.centerY - 180);
-    this.subtitle.setPosition(lobbyLayout.centerX, lobbyLayout.centerY - 115);
-    this.roomCodeInput.setPosition(lobbyLayout.centerX, lobbyLayout.centerY - 20);
-    this.roomCodeShell.style.width = `${lobbyLayout.panelWidth}px`;
-    this.joinButton.setButtonPosition(lobbyLayout.centerX, lobbyLayout.centerY + 90);
-    this.createButton.setButtonPosition(lobbyLayout.centerX, lobbyLayout.centerY + 185);
-    this.errorText.setPosition(lobbyLayout.centerX, lobbyLayout.centerY + 285);
+    this.panel.style.width = `${lobbyLayout.panelWidth}px`;
   }
 
   private onShutdown() {
     this.scale.off('resize', this.relayout, this);
+    this.unsubscribeI18n?.();
+    this.unsubscribeI18n = null;
+    this.overlay.destroy();
   }
 }

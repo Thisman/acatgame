@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http';
 
-import { CLICK_RACE_GAME_NAME, ClickRaceGame } from '@acatgame/game-core';
+import { CLICK_RACE_GAME_NAME, ClickRaceGame, ERROR_CODES } from '@acatgame/game-core';
 
 import { FlatFile, Origins, Server } from './boardgame-compat.js';
 import { RoomRegistry } from './room-registry.js';
@@ -57,12 +57,12 @@ const respond = async (
   } catch (error) {
     if (error instanceof HttpError) {
       ctx.status = error.statusCode;
-      ctx.body = { error: error.message };
+      ctx.body = { errorCode: error.code, error: error.message };
       return;
     }
 
     ctx.status = 500;
-    ctx.body = { error: 'Internal server error.' };
+    ctx.body = { errorCode: ERROR_CODES.INTERNAL_SERVER_ERROR, error: 'Internal server error.' };
   }
 };
 

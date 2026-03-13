@@ -1,0 +1,59 @@
+{
+  "meta": {
+    "title": "ACatGame"
+  },
+  "language": {
+    "switchAria": "Переключить язык"
+  },
+  "actions": {
+    "createRoom": "Создать комнату",
+    "joinRoom": "Войти в комнату",
+    "copyCode": "Скопировать код",
+    "copied": "Скопировано",
+    "copyFailed": "Не удалось скопировать",
+    "ready": "Готово",
+    "cancel": "Отмена",
+    "leaveRoom": "Выйти"
+  },
+  "lobby": {
+    "title": "ACatGame",
+    "subtitle": "Создай комнату или войди по коду",
+    "roomCodePlaceholder": "Код комнаты"
+  },
+  "waiting": {
+    "loadingRoom": "Загрузка комнаты...",
+    "waitingForPlayers": "Ожидание игроков...",
+    "hint": "Поделитесь этим кодом и дождитесь второго игрока"
+  },
+  "ready": {
+    "waitingForSecondPlayer": "Ждем второго игрока...",
+    "pressReady": "Нажмите «Готово»"
+  },
+  "game": {
+    "syncing": "Синхронизация игры...",
+    "score": "Счет: {left} - {right}",
+    "winner": "Победитель: {player}",
+    "finalScore": "Итоговый счет: {left} - {right}",
+    "matchActive": "Матч идет",
+    "currentTurnScore": "Ход: {player} | Счет: {left} - {right}"
+  },
+  "players": {
+    "1": "Игрок 1",
+    "2": "Игрок 2",
+    "generic": "Игрок {number}"
+  },
+  "errors": {
+    "room_code_required": "Нужно ввести код комнаты.",
+    "room_closed": "Комната уже закрыта.",
+    "room_full": "Комната уже заполнена.",
+    "room_waiting_for_players": "Комната все еще ждет игроков.",
+    "ready_change_forbidden": "Сейчас нельзя менять готовность.",
+    "room_not_found": "Комната не найдена.",
+    "invalid_room_session": "Сессия комнаты недействительна.",
+    "internal_server_error": "Внутренняя ошибка сервера.",
+    "lobby_request_failed": "Запрос к лобби завершился ошибкой.",
+    "request_failed": "Запрос завершился ошибкой.",
+    "unable_create_room": "Не удалось создать комнату.",
+    "unable_join_room": "Не удалось войти в комнату."
+  }
+}

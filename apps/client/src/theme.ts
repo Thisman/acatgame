@@ -1,0 +1,14 @@
+export const UI_THEME = {
+  background: '#F2EBBF',
+  text: '#5C4B51',
+  card: '#8CBEB2',
+  accent: '#F06060',
+  accentSoft: '#F3B562',
+  error: '#F06060',
+  backgroundNumber: 0xF2EBBF,
+  textNumber: 0x5C4B51,
+  cardNumber: 0x8CBEB2,
+  cardHighlightNumber: 0xA8D1C7,
+  accentNumber: 0xF06060,
+  accentSoftNumber: 0xF3B562,
+} as const;

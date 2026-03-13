@@ -1,9 +1,11 @@
 import Phaser from 'phaser';
 
+import { UI_THEME } from './theme.js';
+
 export class SpinnerLoader extends Phaser.GameObjects.Container {
   private readonly arc: Phaser.GameObjects.Graphics;
 
-  constructor(scene: Phaser.Scene, color: number = 0x91ada6) {
+  constructor(scene: Phaser.Scene, color: number = UI_THEME.accentNumber) {
     super(scene, 0, 0);
 
     this.arc = scene.add.graphics();
@@ -23,4 +25,3 @@ export class SpinnerLoader extends Phaser.GameObjects.Container {
     });
   }
 }
-

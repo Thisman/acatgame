@@ -8,6 +8,6 @@ export const VIRTUAL_HEIGHT = 900;
 export const ROOM_SEAT_LABELS = ['Player 1', 'Player 2'] as const;
 
 export const PLAYER_COLORS: Record<string, number> = {
-  '0': 0xd8b4a0,
-  '1': 0x9fbeb4,
+  '0': 0x8cbeb2,
+  '1': 0xf06060,
 };

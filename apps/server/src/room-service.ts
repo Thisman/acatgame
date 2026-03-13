@@ -1,8 +1,10 @@
 import {
   CLICK_RACE_GAME_NAME,
   CLICK_RACE_NUM_PLAYERS,
+  ERROR_CODES,
   ROOM_SEAT_LABELS,
   type ClickRaceState,
+  type ErrorCode,
   type LeaveRoomRequest,
   type PresencePingRequest,
   type ReadyRoomRequest,
@@ -43,6 +45,7 @@ const defaultScores = (): Record<string, number> => ({
 export class HttpError extends Error {
   constructor(
     readonly statusCode: number,
+    readonly code: ErrorCode,
     message: string,
   ) {
     super(message);
@@ -87,14 +90,14 @@ export class RoomService {
 
   async joinRoom(matchID: string): Promise<RoomSession> {
     if (this.registry.isClosed(matchID)) {
-      throw new HttpError(410, 'Room is closed.');
+      throw new HttpError(410, ERROR_CODES.ROOM_CLOSED, 'Room is closed.');
     }
 
     const metadata = await this.getMetadata(matchID);
     const seat = this.getNextAvailableSeat(metadata);
 
     if (seat === null) {
-      throw new HttpError(409, 'Room is full.');
+      throw new HttpError(409, ERROR_CODES.ROOM_FULL, 'Room is full.');
     }
 
     const { playerCredentials } = await this.wrapLobbyError(() =>
@@ -157,11 +160,11 @@ export class RoomService {
     const snapshot = await this.getRoomSnapshot(matchID);
 
     if (snapshot.phase === 'waiting') {
-      throw new HttpError(409, 'Room is still waiting for players.');
+      throw new HttpError(409, ERROR_CODES.ROOM_WAITING_FOR_PLAYERS, 'Room is still waiting for players.');
     }
 
     if (snapshot.phase === 'game' || snapshot.phase === 'gameover') {
-      throw new HttpError(409, 'Ready state cannot be changed now.');
+      throw new HttpError(409, ERROR_CODES.READY_CHANGE_FORBIDDEN, 'Ready state cannot be changed now.');
     }
 
     this.registry.setReady(matchID, request.playerID, request.ready);
@@ -182,7 +185,7 @@ export class RoomService {
 
   async getRoomSnapshot(matchID: string): Promise<RoomSnapshot> {
     if (this.registry.isClosed(matchID)) {
-      throw new HttpError(410, 'Room is closed.');
+      throw new HttpError(410, ERROR_CODES.ROOM_CLOSED, 'Room is closed.');
     }
 
     const metadata = await this.getMetadata(matchID);
@@ -225,7 +228,7 @@ export class RoomService {
     try {
       return (await this.lobbyClient.getMatch(CLICK_RACE_GAME_NAME, matchID)) as MatchMetadata;
     } catch {
-      throw new HttpError(404, 'Room not found.');
+      throw new HttpError(404, ERROR_CODES.ROOM_NOT_FOUND, 'Room not found.');
     }
   }
 
@@ -256,7 +259,7 @@ export class RoomService {
 
   private assertAuthorized(matchID: string, playerID: string, credentials: string): void {
     if (!this.registry.validateSession(matchID, playerID, credentials)) {
-      throw new HttpError(401, 'Invalid room session.');
+      throw new HttpError(401, ERROR_CODES.INVALID_ROOM_SESSION, 'Invalid room session.');
     }
   }
 
@@ -333,7 +336,7 @@ export class RoomService {
               : 'Lobby request failed.';
 
         if (Number.isFinite(statusCode)) {
-          throw new HttpError(statusCode, details);
+          throw new HttpError(statusCode, ERROR_CODES.LOBBY_REQUEST_FAILED, details);
         }
       }
 

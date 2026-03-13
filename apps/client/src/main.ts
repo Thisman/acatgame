@@ -3,18 +3,21 @@ import Phaser from 'phaser';
 import { VIRTUAL_HEIGHT, VIRTUAL_WIDTH } from '@acatgame/game-core';
 
 import './styles.css';
+import { setupLanguageSwitcher } from './language-switcher.js';
 import { BootScene } from './scenes/boot-scene.js';
 import { LobbyScene } from './scenes/lobby-scene.js';
 import { RoomScene } from './scenes/room-scene.js';
+import { UI_THEME } from './theme.js';
 
 const parent = 'app';
+const inputTarget = document.getElementById(parent) ?? document.body;
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent,
   width: window.innerWidth,
   height: window.innerHeight,
-  backgroundColor: '#f3f0e8',
+  backgroundColor: UI_THEME.background,
   autoRound: false,
   scene: [BootScene, LobbyScene, RoomScene],
   scale: {
@@ -28,13 +31,17 @@ const config: Phaser.Types.Core.GameConfig = {
     createContainer: true,
   },
   input: {
+    keyboard: {
+      target: window,
+    },
     mouse: {
-      target: parent,
+      target: inputTarget,
     },
     touch: {
-      target: parent,
+      target: inputTarget,
     },
   },
 };
 
+setupLanguageSwitcher();
 void new Phaser.Game(config);

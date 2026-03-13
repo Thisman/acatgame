@@ -1,0 +1,59 @@
+{
+  "meta": {
+    "title": "ACatGame"
+  },
+  "language": {
+    "switchAria": "Switch language"
+  },
+  "actions": {
+    "createRoom": "Create room",
+    "joinRoom": "Join room",
+    "copyCode": "Copy code",
+    "copied": "Copied",
+    "copyFailed": "Copy failed",
+    "ready": "Ready",
+    "cancel": "Cancel",
+    "leaveRoom": "Leave room"
+  },
+  "lobby": {
+    "title": "ACatGame",
+    "subtitle": "Create a room or join by code",
+    "roomCodePlaceholder": "Room code"
+  },
+  "waiting": {
+    "loadingRoom": "Loading room...",
+    "waitingForPlayers": "Waiting for players...",
+    "hint": "Share this code and wait for the second player"
+  },
+  "ready": {
+    "waitingForSecondPlayer": "Waiting for the second player...",
+    "pressReady": "Press ready when you are set"
+  },
+  "game": {
+    "syncing": "Syncing game...",
+    "score": "Score: {left} - {right}",
+    "winner": "Winner: {player}",
+    "finalScore": "Final score: {left} - {right}",
+    "matchActive": "Match active",
+    "currentTurnScore": "Current turn: {player} | Score: {left} - {right}"
+  },
+  "players": {
+    "1": "Player 1",
+    "2": "Player 2",
+    "generic": "Player {number}"
+  },
+  "errors": {
+    "room_code_required": "Room code is required.",
+    "room_closed": "Room is closed.",
+    "room_full": "Room is full.",
+    "room_waiting_for_players": "Room is still waiting for players.",
+    "ready_change_forbidden": "Ready state cannot be changed now.",
+    "room_not_found": "Room not found.",
+    "invalid_room_session": "Invalid room session.",
+    "internal_server_error": "Internal server error.",
+    "lobby_request_failed": "Lobby request failed.",
+    "request_failed": "Request failed.",
+    "unable_create_room": "Unable to create room.",
+    "unable_join_room": "Unable to join room."
+  }
+}
