@@ -52,7 +52,7 @@
     },
     "mine": {
       "name": "Mine Cat",
-      "description": "Arms one adjacent empty cell for 2 turns, then explodes only that cell. The Mine Cat itself survives. The opponent cannot see that cell or its timer unless one of their cats can see it."
+      "description": "Arms one adjacent empty cell for 2 turns, then explodes only that cell. The Mine Cat itself survives. The opponent cannot see that cell or its timer."
     },
     "anchor": {
       "name": "Anchor Cat",

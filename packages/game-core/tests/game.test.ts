@@ -951,7 +951,7 @@ test('a mine cat arms one adjacent empty cell with hidden proximity visibility',
   assert.equal(opponentEffects[16].length, 0);
 });
 
-test('a mine cat becomes visible to a player whose cat is next to the mined cell', () => {
+test('a mine cat stays hidden from the opponent even if their cat is next to the mined cell', () => {
   const state = createGameplayState(
     {
       '0': selection,
@@ -979,8 +979,7 @@ test('a mine cat becomes visible to a player whose cat is next to the mined cell
   );
 
   const opponentEffects = getVisibleCellEffectsForPlayer(state.board, state.cellEffects, '1');
-  assert.equal(opponentEffects[16][0]?.type, 'armedMine');
-  assert.equal(opponentEffects[16][0]?.remainingTurns, 2);
+  assert.equal(opponentEffects[16].length, 0);
 });
 
 test('a mine cat explodes only the chosen cell and survives itself', () => {

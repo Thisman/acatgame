@@ -34,6 +34,12 @@ export class ReadyPhaseView {
   create(deps: ReadyPhaseViewDeps): void {
     this.scene = deps.scene;
     this.controller = deps.controller;
+    this.cards = [];
+    this.lastLayout = null;
+    this.visible = false;
+    this.hoveredCardID = null;
+    this.selectionInFlight = false;
+    this.queuedSelection = null;
 
     const textureKey = getPlayerCatBaseTexture(this.scene, '0');
     const animationKey = getPlayerCatAnimationKey(this.scene, '0');
@@ -94,6 +100,12 @@ export class ReadyPhaseView {
     for (const card of this.cards) {
       card.container.destroy(true);
     }
+    this.cards = [];
+    this.lastLayout = null;
+    this.visible = false;
+    this.hoveredCardID = null;
+    this.selectionInFlight = false;
+    this.queuedSelection = null;
   }
 
   private render(roomLayout: RoomLayout, snapshot: RoomSnapshot | null, state: RoomControllerState) {
@@ -118,7 +130,7 @@ export class ReadyPhaseView {
         card.sprite.setTexture(textureKey);
       }
       const cardAnimationKey = getCardAnimationKey(this.scene, session?.playerID ?? '0', card.id);
-      if (card.sprite.anims.currentAnim?.key !== cardAnimationKey) {
+      if (card.sprite.anims?.currentAnim?.key !== cardAnimationKey) {
         card.sprite.play(cardAnimationKey);
       }
 

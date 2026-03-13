@@ -3,6 +3,7 @@ import {
   CAT_MATCH_BOARD_SIZE,
   CAT_MATCH_HAND_SIZE,
   getAdjacentConvertMechanic,
+  getVisibleCellEffectsForPlayer,
   getHiddenMineMechanic,
   getAdjacentPushMechanic,
   isConvertImmuneCard,
@@ -272,6 +273,18 @@ export class GamePhaseView {
   create(deps: GamePhaseViewDeps): void {
     this.scene = deps.scene;
     this.deps = deps;
+    this.gridCells = [];
+    this.handCards = [];
+    this.lastLayout = null;
+    this.currentSnapshot = null;
+    this.currentState = null;
+    this.visible = false;
+    this.selectedHandIndex = null;
+    this.hoveredCellKey = null;
+    this.hoveredHandIndex = null;
+    this.pendingTargetedPlacement = null;
+    this.animationBoardOverride = null;
+    this.animationCellEffectsOverride = null;
     this.boardGraphics = this.scene.add.graphics();
 
     for (let y = 0; y < CAT_MATCH_BOARD_SIZE; y += 1) {
@@ -403,6 +416,19 @@ export class GamePhaseView {
     for (const card of this.handCards) {
       card.container.destroy(true);
     }
+
+    this.gridCells = [];
+    this.handCards = [];
+    this.lastLayout = null;
+    this.currentSnapshot = null;
+    this.currentState = null;
+    this.visible = false;
+    this.selectedHandIndex = null;
+    this.hoveredCellKey = null;
+    this.hoveredHandIndex = null;
+    this.pendingTargetedPlacement = null;
+    this.animationBoardOverride = null;
+    this.animationCellEffectsOverride = null;
   }
 
   private handleHandPressed(handIndex: number) {
@@ -533,18 +559,22 @@ export class GamePhaseView {
     this.currentState = state;
 
     const rawBoard = state.gameState?.G?.board ?? snapshot?.board ?? [];
-    const rawCellEffects = state.gameState?.G?.cellEffects ?? snapshot?.cellEffects ?? [];
     const hand = state.gameState?.G?.localPlayer?.hand ?? [];
     const sessionPlayerID = state.session?.playerID ?? '0';
+    const visibleCellEffects = getVisibleCellEffectsForPlayer(
+      rawBoard,
+      state.gameState?.G?.cellEffects ?? snapshot?.cellEffects ?? [],
+      sessionPlayerID,
+    );
     const gameLayout = this.getGameLayout(roomLayout);
     const animating = this.animationBoardOverride !== null;
     const canPlay = !animating && this.canLocalPlayerMove(state);
     const board = this.animationBoardOverride ?? rawBoard;
     const cellEffects = animating
-      ? this.animationCellEffectsOverride ?? normalizeCellEffects(rawCellEffects)
+      ? this.animationCellEffectsOverride ?? normalizeCellEffects(visibleCellEffects)
       : canPlay
-        ? previewCellEffectsForPlacement(rawCellEffects)
-        : normalizeCellEffects(rawCellEffects);
+        ? previewCellEffectsForPlacement(visibleCellEffects)
+        : normalizeCellEffects(visibleCellEffects);
 
     if (!canPlay) {
       this.resetPlacementSelection();
@@ -679,7 +709,7 @@ export class GamePhaseView {
         if (cell.card.sprite.texture.key !== textureKey) {
           cell.card.sprite.setTexture(textureKey);
         }
-        if (cell.card.sprite.anims.currentAnim?.key !== animationKey) {
+        if (cell.card.sprite.anims?.currentAnim?.key !== animationKey) {
           cell.card.sprite.play(animationKey);
         }
         renderCatCard(cell.card, {
@@ -741,7 +771,7 @@ export class GamePhaseView {
       if (card.sprite.texture.key !== textureKey) {
         card.sprite.setTexture(textureKey);
       }
-      if (card.sprite.anims.currentAnim?.key !== animationKey) {
+      if (card.sprite.anims?.currentAnim?.key !== animationKey) {
         card.sprite.play(animationKey);
       }
 
@@ -768,7 +798,11 @@ export class GamePhaseView {
 
     const finalBoard = [...(targetState.gameState?.G?.board ?? targetState.snapshot?.board ?? [])];
     const finalCellEffects = normalizeCellEffects(
-      targetState.gameState?.G?.cellEffects ?? targetState.snapshot?.cellEffects,
+      getVisibleCellEffectsForPlayer(
+        finalBoard,
+        targetState.gameState?.G?.cellEffects ?? targetState.snapshot?.cellEffects,
+        targetState.session?.playerID ?? null,
+      ),
     );
     const stagedBoard = [...finalBoard];
 

@@ -423,7 +423,11 @@ const isEffectVisibleToPlayer = (
     return true;
   }
 
-  return effect.visibility === 'public' || canPlayerSeeBoardIndex(board, boardIndex, playerID);
+  if (effect.visibility === 'public') {
+    return true;
+  }
+
+  return Boolean(playerID && effect.sourcePlayerID === playerID);
 };
 
 export const getVisibleCellEffectsForPlayer = (
