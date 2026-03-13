@@ -1,0 +1,25 @@
+{
+  "name": "@acatgame/game-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "tsc -b -w",
+    "build": "tsc -b",
+    "test": "npm run build && node tests/run-tests.mjs"
+  },
+  "dependencies": {
+    "boardgame.io": "^0.50.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0"
+  }
+}

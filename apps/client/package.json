@@ -1,0 +1,17 @@
+{
+  "name": "@acatgame/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "bundle": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "@acatgame/game-core": "file:../../packages/game-core",
+    "boardgame.io": "^0.50.2",
+    "phaser": "^3.90.0"
+  }
+}

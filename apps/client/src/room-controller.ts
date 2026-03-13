@@ -1,0 +1,229 @@
+import {
+  CLICK_RACE_NUM_PLAYERS,
+  ClickRaceGame,
+  type LeaveRoomRequest,
+  type PresencePingRequest,
+  type RoomSession,
+  type RoomSnapshot,
+} from '@acatgame/game-core';
+import { Client } from 'boardgame.io/client';
+import { SocketIO } from 'boardgame.io/multiplayer';
+
+type BoardgameState = {
+  G?: {
+    circles?: RoomSnapshot['circles'];
+    scoreByPlayer?: RoomSnapshot['scores'];
+    winner?: string | null;
+  };
+  ctx?: {
+    currentPlayer?: string | null;
+  };
+  isActive?: boolean;
+  isConnected?: boolean;
+};
+
+export interface RoomControllerState {
+  session: RoomSession | null;
+  snapshot: RoomSnapshot | null;
+  gameState: BoardgameState | null;
+  error: string | null;
+}
+
+interface RequestOptions {
+  method?: string;
+  body?: unknown;
+}
+
+export class RoomController {
+  private readonly listeners = new Set<() => void>();
+  private bgioClient: any = null;
+  private session: RoomSession | null = null;
+  private snapshot: RoomSnapshot | null = null;
+  private gameState: BoardgameState | null = null;
+  private error: string | null = null;
+  private heartbeatTimer: number | null = null;
+  private snapshotTimer: number | null = null;
+
+  constructor(private readonly serverUrl: string) {}
+
+  subscribe(listener: () => void) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  getState(): RoomControllerState {
+    return {
+      session: this.session,
+      snapshot: this.snapshot,
+      gameState: this.gameState,
+      error: this.error,
+    };
+  }
+
+  async createRoom() {
+    const session = await this.request<RoomSession>('/api/rooms', { method: 'POST' });
+    await this.connect(session);
+  }
+
+  async joinRoom(matchID: string) {
+    const normalized = matchID.trim();
+
+    if (!normalized) {
+      throw new Error('Room code is required.');
+    }
+
+    const session = await this.request<RoomSession>(`/api/rooms/${normalized}/join`, {
+      method: 'POST',
+    });
+    await this.connect(session);
+  }
+
+  async leaveRoom() {
+    if (!this.session) {
+      return;
+    }
+
+    const body: LeaveRoomRequest = {
+      playerID: this.session.playerID,
+      credentials: this.session.credentials,
+    };
+
+    await this.request(`/api/rooms/${this.session.matchID}/leave`, {
+      method: 'POST',
+      body,
+    });
+
+    this.reset();
+  }
+
+  async refreshSnapshot() {
+    if (!this.session) {
+      return;
+    }
+
+    this.snapshot = await this.request<RoomSnapshot>(`/api/rooms/${this.session.matchID}`);
+    this.emit();
+  }
+
+  async placeCircle(xRatio: number, yRatio: number) {
+    this.error = null;
+
+    if (!this.bgioClient) {
+      return;
+    }
+
+    this.bgioClient.moves.placeCircle(xRatio, yRatio);
+  }
+
+  reset() {
+    this.stopNetworking();
+    this.bgioClient?.stop?.();
+    this.bgioClient = null;
+    this.session = null;
+    this.snapshot = null;
+    this.gameState = null;
+    this.error = null;
+    this.emit();
+  }
+
+  private async connect(session: RoomSession) {
+    this.stopNetworking();
+    this.bgioClient?.stop?.();
+
+    this.session = session;
+    this.snapshot = null;
+    this.error = null;
+    this.gameState = null;
+
+    this.bgioClient = Client({
+      game: ClickRaceGame,
+      numPlayers: CLICK_RACE_NUM_PLAYERS,
+      matchID: session.matchID,
+      playerID: session.playerID,
+      credentials: session.credentials,
+      multiplayer: SocketIO({ server: this.serverUrl }),
+      debug: false,
+    });
+
+    this.bgioClient.subscribe(() => {
+      this.gameState = this.bgioClient.getState();
+      this.emit();
+    });
+
+    this.bgioClient.start();
+    await this.refreshSnapshot();
+    await this.sendPresence();
+    this.startNetworking();
+  }
+
+  private startNetworking() {
+    this.stopNetworking();
+
+    this.heartbeatTimer = window.setInterval(() => {
+      void this.sendPresence();
+    }, 4_000);
+
+    this.snapshotTimer = window.setInterval(() => {
+      void this.refreshSnapshot();
+    }, 2_500);
+  }
+
+  private stopNetworking() {
+    if (this.heartbeatTimer) {
+      window.clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+
+    if (this.snapshotTimer) {
+      window.clearInterval(this.snapshotTimer);
+      this.snapshotTimer = null;
+    }
+  }
+
+  private async sendPresence() {
+    if (!this.session) {
+      return;
+    }
+
+    const body: PresencePingRequest = {
+      playerID: this.session.playerID,
+      credentials: this.session.credentials,
+    };
+
+    this.snapshot = await this.request<RoomSnapshot>(`/api/rooms/${this.session.matchID}/presence`, {
+      method: 'POST',
+      body,
+    });
+    this.emit();
+  }
+
+  private async request<T = void>(path: string, init: RequestOptions = {}) {
+    const response = await fetch(`${this.serverUrl}${path}`, {
+      method: init.method ?? 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: init.body ? JSON.stringify(init.body) : undefined,
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      const error = payload.error ?? 'Request failed.';
+      this.error = error;
+      this.emit();
+      throw new Error(error);
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    return (await response.json()) as T;
+  }
+
+  private emit() {
+    for (const listener of this.listeners) {
+      listener();
+    }
+  }
+}

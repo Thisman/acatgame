@@ -1,0 +1,22 @@
+{
+  "name": "acatgame",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n core,server,client -c yellow,green,blue \"npm run dev --workspace @acatgame/game-core\" \"npm run dev --workspace @acatgame/server\" \"npm run dev --workspace @acatgame/client\"",
+    "build": "npm run build --workspace @acatgame/game-core && npm run build --workspace @acatgame/server && npm run typecheck --workspace @acatgame/client",
+    "test": "npm run test --workspace @acatgame/game-core && npm run test --workspace @acatgame/server"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.4",
+    "vitest": "^3.2.4"
+  }
+}
