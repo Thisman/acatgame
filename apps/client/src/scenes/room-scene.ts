@@ -3,6 +3,7 @@ import {
   CAT_MATCH_MAX_ROUNDS,
   READY_CARD_SELECTION_LIMIT,
   type RoomPhase,
+  type ResolvedEffectBatch,
   type RoomSnapshot,
 } from '@acatgame/game-core';
 
@@ -22,6 +23,7 @@ import { createTextBlock, type TextBlockComponent } from '../ui/HTML/text-block.
 import { getUiErrorMessage, toUiError, type UiError } from '../ui-error.js';
 
 type CopyFeedbackState = 'default' | 'copied' | 'failed';
+type SceneRoomState = ReturnType<typeof roomController.getState>;
 
 export class RoomScene extends Phaser.Scene {
   private overlay!: OverlayRoot;
@@ -58,6 +60,9 @@ export class RoomScene extends Phaser.Scene {
   private resetCopyLabelEvent: Phaser.Time.TimerEvent | null = null;
   private transientTurnMessageKey: string | null = null;
   private transientTurnMessageEvent: Phaser.Time.TimerEvent | null = null;
+  private displayedRoomState: SceneRoomState | null = null;
+  private latestRoomState: SceneRoomState | null = null;
+  private processingRoomState = false;
 
   constructor() {
     super('RoomScene');
@@ -79,7 +84,12 @@ export class RoomScene extends Phaser.Scene {
     this.scale.on('resize', this.renderView, this);
     this.events.on(Phaser.Scenes.Events.SHUTDOWN, this.onShutdown, this);
 
-    this.unsubscribe = roomController.subscribe(() => this.renderView());
+    this.latestRoomState = roomController.getState();
+    this.displayedRoomState = this.latestRoomState;
+
+    this.unsubscribe = roomController.subscribe(() => {
+      this.handleControllerStateChanged();
+    });
     this.unsubscribeI18n = i18n.subscribe(() => this.renderView());
 
     void roomController.refreshSnapshot().catch(() => {});
@@ -194,7 +204,7 @@ export class RoomScene extends Phaser.Scene {
 
   private renderView() {
     const roomLayout = layout.getRoomLayout(this);
-    const state = roomController.getState();
+    const state = this.displayedRoomState ?? roomController.getState();
 
     if (state.needsLobbyRedirect && roomController.consumeLobbyRedirect()) {
       this.scene.start('LobbyScene');
@@ -554,6 +564,77 @@ export class RoomScene extends Phaser.Scene {
     this.renderView();
   }
 
+  private handleControllerStateChanged() {
+    this.latestRoomState = roomController.getState();
+    void this.processRoomStateChanges();
+  }
+
+  private async processRoomStateChanges() {
+    if (this.processingRoomState) {
+      return;
+    }
+
+    this.processingRoomState = true;
+
+    try {
+      while (this.latestRoomState) {
+        if (!this.displayedRoomState) {
+          this.displayedRoomState = this.latestRoomState;
+          this.renderView();
+          continue;
+        }
+
+        const targetState = this.latestRoomState;
+
+        if (targetState === this.displayedRoomState) {
+          break;
+        }
+
+        const batch = this.getPendingResolvedEffectBatch(this.displayedRoomState, targetState);
+
+        if (batch) {
+          await this.boardView.playResolvedEffectBatch(targetState, batch);
+        }
+
+        this.displayedRoomState = targetState;
+        this.boardView.clearAnimationState();
+        this.renderView();
+
+        if (this.latestRoomState === targetState) {
+          break;
+        }
+      }
+    } finally {
+      this.processingRoomState = false;
+    }
+  }
+
+  private getPendingResolvedEffectBatch(
+    currentState: SceneRoomState,
+    nextState: SceneRoomState,
+  ): ResolvedEffectBatch | null {
+    const currentBatchID = this.getResolvedEffectBatch(currentState)?.id ?? null;
+    const nextBatch = this.getResolvedEffectBatch(nextState);
+
+    if (!nextBatch || nextBatch.steps.length === 0 || nextBatch.id === currentBatchID) {
+      return null;
+    }
+
+    const currentPhase = currentState.snapshot?.phase ?? 'waiting';
+    const nextPhase = nextState.snapshot?.phase ?? 'waiting';
+    const boardVisible = currentPhase === 'game' || currentPhase === 'gameover' || nextPhase === 'game' || nextPhase === 'gameover';
+
+    return boardVisible ? nextBatch : null;
+  }
+
+  private getResolvedEffectBatch(state: SceneRoomState | null): ResolvedEffectBatch | null {
+    if (!state) {
+      return null;
+    }
+
+    return state.gameState?.G?.resolvedEffectBatch ?? state.snapshot?.resolvedEffectBatch ?? null;
+  }
+
   private onShutdown() {
     this.scale.off('resize', this.renderView, this);
     this.unsubscribe?.();
@@ -565,5 +646,8 @@ export class RoomScene extends Phaser.Scene {
     this.readyView.destroy();
     this.boardView.destroy();
     this.overlay.destroy();
+    this.displayedRoomState = null;
+    this.latestRoomState = null;
+    this.processingRoomState = false;
   }
 }

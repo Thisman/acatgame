@@ -72,6 +72,7 @@ export interface PlacementLockEffect {
   sourcePlayerID: string;
   sourceCardID: number;
   sourceBoardIndex: number;
+  createdOrder: number;
 }
 
 export interface ArmedMineEffect {
@@ -84,6 +85,7 @@ export interface ArmedMineEffect {
   includeDiagonals: boolean;
   clearSelf: boolean;
   visibility: 'public' | 'proximity';
+  createdOrder: number;
 }
 
 export type BoardCellEffect = PlacementLockEffect | ArmedMineEffect;

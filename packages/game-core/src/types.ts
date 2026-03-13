@@ -9,6 +9,24 @@ export interface BoardCell {
   move: number;
 }
 
+export interface ClearCellResolvedEffectEvent {
+  type: 'clearCell';
+  boardIndex: number;
+  cell: BoardCell;
+}
+
+export type ResolvedEffectEvent = ClearCellResolvedEffectEvent;
+
+export interface ResolvedEffectStep {
+  order: number;
+  events: ResolvedEffectEvent[];
+}
+
+export interface ResolvedEffectBatch {
+  id: number;
+  steps: ResolvedEffectStep[];
+}
+
 export interface RoundResult {
   round: number;
   winner: string | null;
@@ -50,9 +68,22 @@ export interface ClickRaceState {
   winner: string | null;
   players: Record<string, PrivatePlayerState>;
   playerSummaries: Record<string, PublicPlayerSummary>;
+  resolvedEffectBatch: ResolvedEffectBatch | null;
+  nextResolvedEffectBatchID: number;
+  nextEffectOrder: number;
 }
 
-export interface ClickRaceClientState extends Omit<ClickRaceState, 'players'> {
+export interface ClickRaceClientState {
+  board: Array<BoardCell | null>;
+  cellEffects: Array<BoardCellEffect[]>;
+  currentRound: number;
+  roundWinsByPlayer: Record<string, number>;
+  drawRounds: number;
+  roundResult: RoundResult | null;
+  matchResult: MatchResult | null;
+  winner: string | null;
+  playerSummaries: Record<string, PublicPlayerSummary>;
+  resolvedEffectBatch: ResolvedEffectBatch | null;
   localPlayer: LocalPlayerState | null;
 }
 
@@ -88,6 +119,7 @@ export interface RoomSnapshot {
   drawRounds: number;
   roundResult: RoundResult | null;
   matchResult: MatchResult | null;
+  resolvedEffectBatch: ResolvedEffectBatch | null;
   readyByPlayer: Record<string, boolean>;
   selectedCardIDsByPlayer: Record<string, number[]>;
   requiredPlayers: number;

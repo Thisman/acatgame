@@ -39,6 +39,14 @@ const placeCat = ClickRaceGame.moves?.placeCat as (
   targetY?: number,
 ) => void | 'INVALID_MOVE';
 
+const stripEffectMetadata = (effect: ClickRaceState['cellEffects'][number][number]) => {
+  const { createdOrder: _createdOrder, ...rest } = effect;
+  return rest;
+};
+
+const stripEffectListMetadata = (effects: ClickRaceState['cellEffects'][number]) =>
+  effects.map(stripEffectMetadata);
+
 test('createGameplayState creates a round with 5 cards in hand and 10 in deck', () => {
   const state = createGameplayState(
     {
@@ -555,7 +563,7 @@ test('placing a blocker card locks all adjacent empty cells for two turns', () =
   );
 
   for (const index of [16, 18, 23, 25, 30, 31, 32]) {
-    assert.deepEqual(state.cellEffects[index], [
+    assert.deepEqual(stripEffectListMetadata(state.cellEffects[index]), [
       {
         type: 'placementLock',
         remainingTurns: 2,
@@ -704,7 +712,7 @@ test('overlapping blocker auras keep separate timers on the same cell', () => {
     0,
   );
 
-  assert.deepEqual(state.cellEffects[24], [
+  assert.deepEqual(stripEffectListMetadata(state.cellEffects[24]), [
     {
       type: 'placementLock',
       remainingTurns: 1,
@@ -772,7 +780,7 @@ test('destroying one blocker removes only its locks and preserves the other time
     1,
   );
 
-  assert.deepEqual(state.cellEffects[24], [
+  assert.deepEqual(stripEffectListMetadata(state.cellEffects[24]), [
     {
       type: 'placementLock',
       remainingTurns: 1,
@@ -808,7 +816,7 @@ test('placing a bomb cat arms it for two turns on its own cell', () => {
     0,
   );
 
-  assert.deepEqual(state.cellEffects[24], [
+  assert.deepEqual(stripEffectListMetadata(state.cellEffects[24]), [
       {
         type: 'armedMine',
         remainingTurns: 2,
@@ -922,7 +930,7 @@ test('a mine cat arms one adjacent empty cell with hidden proximity visibility',
     2,
   );
 
-  assert.deepEqual(state.cellEffects[16], [
+  assert.deepEqual(stripEffectListMetadata(state.cellEffects[16]), [
     {
       type: 'armedMine',
       remainingTurns: 2,
@@ -1091,6 +1099,101 @@ test('placing a cat onto a mined cell removes that cat immediately and clears th
     move: 1,
   });
   assert.equal(state.players['1'].hand[0], 14);
+});
+
+test('older effects resolve before newer ones and keep their animation order', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [5, 1, 2, 3, 4];
+  state.players['0'].deck = [6, 7, 8, 9, 10];
+  state.players['1'].hand = [12, 0, 1, 2, 3];
+  state.players['1'].deck = [4, 5, 6, 7, 8];
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 1 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    6,
+    6,
+    0,
+  );
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '1', turn: 2 },
+      playerID: '1',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    1,
+    1,
+    0,
+    0,
+    0,
+  );
+
+  state.board[40] = { playerID: '1', cardID: 13, move: 0 };
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 3 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    0,
+    0,
+    1,
+  );
+
+  assert.deepEqual(
+    state.resolvedEffectBatch?.steps.map((step) => ({
+      order: step.order,
+      events: step.events.map((event) => ({
+        type: event.type,
+        boardIndex: event.boardIndex,
+        cell: event.cell,
+      })),
+    })),
+    [
+      {
+        order: 1,
+        events: [
+          {
+            type: 'clearCell',
+            boardIndex: 40,
+            cell: { playerID: '1', cardID: 13, move: 0 },
+          },
+          {
+            type: 'clearCell',
+            boardIndex: 48,
+            cell: { playerID: '0', cardID: 5, move: 1 },
+          },
+        ],
+      },
+      {
+        order: 2,
+        events: [
+          {
+            type: 'clearCell',
+            boardIndex: 0,
+            cell: { playerID: '0', cardID: 1, move: 3 },
+          },
+        ],
+      },
+    ],
+  );
 });
 
 test('winning a round stores the result and waits for the next round reset', () => {

@@ -9,6 +9,7 @@ import {
   isPushImmuneCard,
   type BoardCell,
   type BoardCellEffect,
+  type ResolvedEffectBatch,
   type RoomSnapshot,
 } from '@acatgame/game-core';
 
@@ -258,11 +259,15 @@ export class GamePhaseView {
   private gridCells: GridCellView[] = [];
   private handCards: CatCardView[] = [];
   private lastLayout: RoomLayout | null = null;
+  private currentSnapshot: RoomSnapshot | null = null;
+  private currentState: RoomControllerState | null = null;
   private visible = false;
   private selectedHandIndex: number | null = null;
   private hoveredCellKey: string | null = null;
   private hoveredHandIndex: number | null = null;
   private pendingTargetedPlacement: PendingTargetedPlacement | null = null;
+  private animationBoardOverride: Array<BoardCell | null> | null = null;
+  private animationCellEffectsOverride: Array<BoardCellEffect[]> | null = null;
 
   create(deps: GamePhaseViewDeps): void {
     this.scene = deps.scene;
@@ -351,6 +356,8 @@ export class GamePhaseView {
   }
 
   show(snapshot: RoomSnapshot | null, state: RoomControllerState): void {
+    this.currentSnapshot = snapshot;
+    this.currentState = state;
     this.visible = true;
     this.boardGraphics.setVisible(true);
 
@@ -362,6 +369,7 @@ export class GamePhaseView {
   hide(): void {
     this.visible = false;
     this.boardGraphics?.setVisible(false);
+    this.clearAnimationState();
     this.resetPlacementSelection();
 
     for (const cell of this.gridCells) {
@@ -378,9 +386,8 @@ export class GamePhaseView {
   layout(roomLayout: RoomLayout): void {
     this.lastLayout = roomLayout;
 
-    if (this.visible) {
-      const state = this.deps.controller.getState();
-      this.render(roomLayout, state.snapshot, state);
+    if (this.visible && this.currentState) {
+      this.render(roomLayout, this.currentSnapshot, this.currentState);
     }
   }
 
@@ -403,7 +410,11 @@ export class GamePhaseView {
       return;
     }
 
-    const state = this.deps.controller.getState();
+    const state = this.currentState;
+
+    if (!state) {
+      return;
+    }
 
     if (!this.canLocalPlayerMove(state)) {
       return;
@@ -431,7 +442,11 @@ export class GamePhaseView {
       return;
     }
 
-    const state = this.deps.controller.getState();
+    const state = this.currentState;
+
+    if (!state) {
+      return;
+    }
 
     if (!this.canLocalPlayerMove(state)) {
       return;
@@ -514,15 +529,22 @@ export class GamePhaseView {
   }
 
   private render(roomLayout: RoomLayout, snapshot: RoomSnapshot | null, state: RoomControllerState) {
-    const board = state.gameState?.G?.board ?? snapshot?.board ?? [];
+    this.currentSnapshot = snapshot;
+    this.currentState = state;
+
+    const rawBoard = state.gameState?.G?.board ?? snapshot?.board ?? [];
     const rawCellEffects = state.gameState?.G?.cellEffects ?? snapshot?.cellEffects ?? [];
     const hand = state.gameState?.G?.localPlayer?.hand ?? [];
     const sessionPlayerID = state.session?.playerID ?? '0';
     const gameLayout = this.getGameLayout(roomLayout);
-    const canPlay = this.canLocalPlayerMove(state);
-    const cellEffects = canPlay
-      ? previewCellEffectsForPlacement(rawCellEffects)
-      : normalizeCellEffects(rawCellEffects);
+    const animating = this.animationBoardOverride !== null;
+    const canPlay = !animating && this.canLocalPlayerMove(state);
+    const board = this.animationBoardOverride ?? rawBoard;
+    const cellEffects = animating
+      ? this.animationCellEffectsOverride ?? normalizeCellEffects(rawCellEffects)
+      : canPlay
+        ? previewCellEffectsForPlacement(rawCellEffects)
+        : normalizeCellEffects(rawCellEffects);
 
     if (!canPlay) {
       this.resetPlacementSelection();
@@ -739,6 +761,53 @@ export class GamePhaseView {
     }
   }
 
+  async playResolvedEffectBatch(targetState: RoomControllerState, batch: ResolvedEffectBatch): Promise<void> {
+    if (!this.visible || !this.lastLayout || batch.steps.length === 0) {
+      return;
+    }
+
+    const finalBoard = [...(targetState.gameState?.G?.board ?? targetState.snapshot?.board ?? [])];
+    const finalCellEffects = normalizeCellEffects(
+      targetState.gameState?.G?.cellEffects ?? targetState.snapshot?.cellEffects,
+    );
+    const stagedBoard = [...finalBoard];
+
+    for (const step of batch.steps) {
+      for (const event of step.events) {
+        if (event.type === 'clearCell') {
+          stagedBoard[event.boardIndex] = event.cell;
+        }
+      }
+    }
+
+    this.animationBoardOverride = stagedBoard;
+    this.animationCellEffectsOverride = finalCellEffects;
+    this.resetPlacementSelection();
+    this.rerender();
+
+    for (const step of batch.steps) {
+      const clearEvents = step.events.filter((event) => event.type === 'clearCell');
+
+      await Promise.all(clearEvents.map((event) => this.animateClearedCell(event.boardIndex)));
+
+      for (const event of clearEvents) {
+        stagedBoard[event.boardIndex] = null;
+      }
+
+      this.animationBoardOverride = [...stagedBoard];
+      this.rerender();
+    }
+  }
+
+  clearAnimationState(): void {
+    this.animationBoardOverride = null;
+    this.animationCellEffectsOverride = null;
+
+    for (const cell of this.gridCells) {
+      cell.card.container.setAlpha(1);
+    }
+  }
+
   private resetPlacementSelection() {
     this.selectedHandIndex = null;
     this.pendingTargetedPlacement = null;
@@ -746,6 +815,7 @@ export class GamePhaseView {
 
   private canLocalPlayerMove(state: RoomControllerState) {
     return Boolean(
+      !this.animationBoardOverride &&
       state.session &&
         state.snapshot?.phase === 'game' &&
         state.gameState?.isConnected &&
@@ -774,11 +844,32 @@ export class GamePhaseView {
   }
 
   private rerender() {
-    if (!this.visible || !this.lastLayout) {
+    if (!this.visible || !this.lastLayout || !this.currentState) {
       return;
     }
 
-    const state = this.deps.controller.getState();
-    this.render(this.lastLayout, state.snapshot, state);
+    this.render(this.lastLayout, this.currentSnapshot, this.currentState);
+  }
+
+  private animateClearedCell(boardIndex: number): Promise<void> {
+    const cell = this.gridCells[boardIndex];
+
+    if (!cell) {
+      return Promise.resolve();
+    }
+
+    cell.card.container.setAlpha(1);
+
+    return new Promise((resolve) => {
+      this.scene.tweens.add({
+        targets: cell.card.container,
+        alpha: 0,
+        duration: 500,
+        ease: 'Linear',
+        onComplete: () => {
+          resolve();
+        },
+      });
+    });
   }
 }

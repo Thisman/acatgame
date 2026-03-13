@@ -283,6 +283,7 @@ export class RoomService {
     const drawRounds = storedState?.G?.drawRounds ?? 0;
     const roundResult = storedState?.G?.roundResult ?? null;
     const storedMatchResult = storedState?.G?.matchResult ?? storedState?.ctx?.gameover ?? null;
+    const resolvedEffectBatch = storedState?.G?.resolvedEffectBatch ?? null;
     const matchResult = forfeitWinner
       ? {
           winner: forfeitWinner,
@@ -327,6 +328,7 @@ export class RoomService {
       drawRounds,
       roundResult,
       matchResult,
+      resolvedEffectBatch,
       readyByPlayer: this.buildReadyState(matchID),
       selectedCardIDsByPlayer: this.buildSelectedCardsState(matchID),
       requiredPlayers: CLICK_RACE_NUM_PLAYERS,

@@ -21,10 +21,13 @@ import {
 } from './cards.js';
 import type {
   BoardCell,
+  ClearCellResolvedEffectEvent,
   ClickRaceClientState,
   ClickRaceState,
   LocalPlayerState,
   MatchResult,
+  ResolvedEffectBatch,
+  ResolvedEffectStep,
   PrivatePlayerState,
   PublicPlayerSummary,
   RoundResult,
@@ -65,6 +68,31 @@ const cloneMatchResult = (result: MatchResult | null): MatchResult | null =>
       }
     : null;
 
+const cloneBoardCell = (cell: BoardCell): BoardCell => ({
+  playerID: cell.playerID,
+  cardID: cell.cardID,
+  move: cell.move,
+});
+
+const cloneResolvedEffectEvent = (event: ClearCellResolvedEffectEvent): ClearCellResolvedEffectEvent => ({
+  type: event.type,
+  boardIndex: event.boardIndex,
+  cell: cloneBoardCell(event.cell),
+});
+
+const cloneResolvedEffectStep = (step: ResolvedEffectStep): ResolvedEffectStep => ({
+  order: step.order,
+  events: step.events.map(cloneResolvedEffectEvent),
+});
+
+const cloneResolvedEffectBatch = (batch: ResolvedEffectBatch | null): ResolvedEffectBatch | null =>
+  batch
+    ? {
+        id: batch.id,
+        steps: batch.steps.map(cloneResolvedEffectStep),
+      }
+    : null;
+
 const cloneCellEffect = (effect: BoardCellEffect): BoardCellEffect => {
   switch (effect.type) {
     case 'placementLock':
@@ -89,54 +117,90 @@ const normalizeCellEffects = (cellEffects?: Array<BoardCellEffect[]> | null) => 
   return normalized;
 };
 
-const resolveMineExplosions = (
-  G: ClickRaceState,
-  cellEffects: Array<BoardCellEffect[]>,
-  explodedMines: ArmedMineEffect[],
-) => {
-  for (const effect of explodedMines) {
-    if (effect.type !== 'armedMine') {
-      continue;
-    }
-
-    const centerX = effect.sourceBoardIndex % CAT_MATCH_BOARD_SIZE;
-    const centerY = Math.floor(effect.sourceBoardIndex / CAT_MATCH_BOARD_SIZE);
-
-    for (let deltaY = -effect.radius; deltaY <= effect.radius; deltaY += 1) {
-      for (let deltaX = -effect.radius; deltaX <= effect.radius; deltaX += 1) {
-        const isSelf = deltaX === 0 && deltaY === 0;
-
-        if (isSelf && !effect.clearSelf) {
-          continue;
-        }
-
-        if (!isSelf && !effect.includeDiagonals && Math.abs(deltaX) + Math.abs(deltaY) !== 1) {
-          continue;
-        }
-
-        const targetX = centerX + deltaX;
-        const targetY = centerY + deltaY;
-
-        if (
-          targetX < 0 ||
-          targetX >= CAT_MATCH_BOARD_SIZE ||
-          targetY < 0 ||
-          targetY >= CAT_MATCH_BOARD_SIZE
-        ) {
-          continue;
-        }
-
-        const targetIndex = getBoardIndex(targetX, targetY);
-        G.board[targetIndex] = null;
-        cellEffects[targetIndex] = cellEffects[targetIndex].filter((cellEffect) => cellEffect.type !== 'armedMine');
-      }
-    }
-  }
+const getNextEffectOrder = (G: ClickRaceState) => {
+  const order = G.nextEffectOrder;
+  G.nextEffectOrder += 1;
+  return order;
 };
 
-const advanceCellEffects = (G: ClickRaceState): Array<BoardCellEffect[]> => {
-  const explodedMines: ArmedMineEffect[] = [];
-  const nextCellEffects = normalizeCellEffects(G.cellEffects).map((effects): BoardCellEffect[] =>
+const clearBoardCell = (
+  G: ClickRaceState,
+  boardIndex: number,
+  events: ClearCellResolvedEffectEvent[],
+) => {
+  const cell = G.board[boardIndex];
+
+  if (!cell) {
+    return;
+  }
+
+  events.push({
+    type: 'clearCell',
+    boardIndex,
+    cell: cloneBoardCell(cell),
+  });
+  G.board[boardIndex] = null;
+  G.cellEffects[boardIndex] = G.cellEffects[boardIndex].filter((effect) => effect.type !== 'armedMine');
+};
+
+const applyMineEffect = (G: ClickRaceState, effect: ArmedMineEffect): ResolvedEffectStep | null => {
+  const effectEvents: ClearCellResolvedEffectEvent[] = [];
+  const centerX = effect.sourceBoardIndex % CAT_MATCH_BOARD_SIZE;
+  const centerY = Math.floor(effect.sourceBoardIndex / CAT_MATCH_BOARD_SIZE);
+
+  for (let deltaY = -effect.radius; deltaY <= effect.radius; deltaY += 1) {
+    for (let deltaX = -effect.radius; deltaX <= effect.radius; deltaX += 1) {
+      const isSelf = deltaX === 0 && deltaY === 0;
+
+      if (isSelf && !effect.clearSelf) {
+        continue;
+      }
+
+      if (!isSelf && !effect.includeDiagonals && Math.abs(deltaX) + Math.abs(deltaY) !== 1) {
+        continue;
+      }
+
+      const targetX = centerX + deltaX;
+      const targetY = centerY + deltaY;
+
+      if (
+        targetX < 0 ||
+        targetX >= CAT_MATCH_BOARD_SIZE ||
+        targetY < 0 ||
+        targetY >= CAT_MATCH_BOARD_SIZE
+      ) {
+        continue;
+      }
+
+      clearBoardCell(G, getBoardIndex(targetX, targetY), effectEvents);
+    }
+  }
+
+  if (effectEvents.length === 0) {
+    return null;
+  }
+
+  return {
+    order: effect.createdOrder,
+    events: effectEvents,
+  };
+};
+
+const advanceCellEffects = (
+  G: ClickRaceState,
+  placementBoardIndex: number,
+): ResolvedEffectBatch | null => {
+  const occupancyTriggeredOrders = new Set(
+    (G.cellEffects[placementBoardIndex] ?? [])
+      .filter((effect): effect is ArmedMineEffect => effect.type === 'armedMine' && effect.visibility === 'proximity')
+      .map((effect) => effect.createdOrder),
+  );
+  const triggeredEffects: Array<{
+    boardIndex: number;
+    createdOrder: number;
+  }> = [];
+
+  G.cellEffects = normalizeCellEffects(G.cellEffects).map((effects, boardIndex): BoardCellEffect[] =>
     effects.reduce<BoardCellEffect[]>((nextEffects, effect) => {
       switch (effect.type) {
         case 'placementLock': {
@@ -152,10 +216,26 @@ const advanceCellEffects = (G: ClickRaceState): Array<BoardCellEffect[]> => {
           return nextEffects;
         }
         case 'armedMine': {
+          if (boardIndex === placementBoardIndex && occupancyTriggeredOrders.has(effect.createdOrder)) {
+            triggeredEffects.push({
+              boardIndex,
+              createdOrder: effect.createdOrder,
+            });
+            nextEffects.push(effect);
+            return nextEffects;
+          }
+
           const remainingTurns = effect.remainingTurns - 1;
 
           if (remainingTurns <= 0) {
-            explodedMines.push(effect);
+            triggeredEffects.push({
+              boardIndex,
+              createdOrder: effect.createdOrder,
+            });
+            nextEffects.push({
+              ...effect,
+              remainingTurns: 0,
+            });
             return nextEffects;
           }
 
@@ -169,8 +249,42 @@ const advanceCellEffects = (G: ClickRaceState): Array<BoardCellEffect[]> => {
     }, []),
   );
 
-  resolveMineExplosions(G, nextCellEffects, explodedMines);
-  return pruneInactivePlacementLocks(G.board, nextCellEffects);
+  const steps: ResolvedEffectStep[] = [];
+  const orderedTriggeredEffects = [...triggeredEffects].sort((left, right) => left.createdOrder - right.createdOrder);
+
+  for (const triggeredEffect of orderedTriggeredEffects) {
+    const effect = G.cellEffects[triggeredEffect.boardIndex].find(
+      (cellEffect): cellEffect is ArmedMineEffect =>
+        cellEffect.type === 'armedMine' && cellEffect.createdOrder === triggeredEffect.createdOrder,
+    );
+
+    if (!effect) {
+      continue;
+    }
+
+    G.cellEffects[triggeredEffect.boardIndex] = G.cellEffects[triggeredEffect.boardIndex].filter(
+      (cellEffect) => !(cellEffect.type === 'armedMine' && cellEffect.createdOrder === triggeredEffect.createdOrder),
+    );
+
+    const step = applyMineEffect(G, effect);
+
+    if (step) {
+      steps.push(step);
+    }
+  }
+
+  G.cellEffects = pruneInactivePlacementLocks(G.board, G.cellEffects);
+
+  if (steps.length === 0) {
+    return null;
+  }
+
+  const batch: ResolvedEffectBatch = {
+    id: G.nextResolvedEffectBatchID,
+    steps,
+  };
+  G.nextResolvedEffectBatchID += 1;
+  return batch;
 };
 
 const hasPlacementLock = (effects: BoardCellEffect[]) =>
@@ -197,9 +311,6 @@ const pruneInactivePlacementLocks = (
   cellEffects: Array<BoardCellEffect[]>,
 ) =>
   cellEffects.map((effects) => effects.filter((effect) => isPlacementLockSourceActive(board, effect)));
-
-const hasTriggeredHiddenMine = (effects: BoardCellEffect[]) =>
-  effects.some((effect) => effect.type === 'armedMine' && effect.visibility === 'proximity');
 
 const getNeighborBoardIndexes = (
   cellX: number,
@@ -393,6 +504,7 @@ const applyOnPlaceMechanics = (
                 sourcePlayerID: playerID,
                 sourceCardID: cardID,
                 sourceBoardIndex: boardIndex,
+                createdOrder: getNextEffectOrder(G),
               },
             ];
           }
@@ -412,6 +524,7 @@ const applyOnPlaceMechanics = (
             includeDiagonals: mechanic.includeDiagonals,
             clearSelf: mechanic.clearSelf,
             visibility: 'public',
+            createdOrder: getNextEffectOrder(G),
           },
         ];
         break;
@@ -433,6 +546,7 @@ const applyOnPlaceMechanics = (
             includeDiagonals: false,
             clearSelf: true,
             visibility: 'proximity',
+            createdOrder: getNextEffectOrder(G),
           },
         ];
         break;
@@ -596,6 +710,9 @@ export const createGameplayState = (
     winner: null,
     players,
     playerSummaries: createPlayerSummaries(players),
+    resolvedEffectBatch: null,
+    nextResolvedEffectBatchID: 1,
+    nextEffectOrder: 1,
   };
 };
 
@@ -622,6 +739,7 @@ const buildClientState = (G: ClickRaceState, playerID?: string | null): ClickRac
       '0': { ...G.playerSummaries['0'] },
       '1': { ...G.playerSummaries['1'] },
     },
+    resolvedEffectBatch: cloneResolvedEffectBatch(G.resolvedEffectBatch),
     localPlayer,
   };
 };
@@ -726,6 +844,7 @@ export const createNextRoundState = (
     roundResult: null,
     players,
     playerSummaries: createPlayerSummaries(players),
+    resolvedEffectBatch: null,
   };
 };
 
@@ -838,14 +957,11 @@ const placeCatMove: MoveFn<ClickRaceState> = (
     cardID,
     move: ctx.turn,
   };
+  G.resolvedEffectBatch = null;
 
   playerState.hand[handIndex] = playerState.deck.shift() ?? null;
   playerState.placedCount += 1;
-  if (hasTriggeredHiddenMine(G.cellEffects[boardIndex] ?? [])) {
-    G.board[boardIndex] = null;
-    G.cellEffects[boardIndex] = G.cellEffects[boardIndex].filter((effect) => effect.type !== 'armedMine');
-  }
-  G.cellEffects = advanceCellEffects(G);
+  G.resolvedEffectBatch = advanceCellEffects(G, boardIndex);
 
   let affectedBoardIndex: number | null = null;
 
