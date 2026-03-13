@@ -20,6 +20,8 @@ export const PLAYER_CAT_ANIMATION_KEYS = {
     convert: 'player-cat-convert-0',
     push: 'player-cat-push-0',
     mine: 'player-cat-mine-0',
+    bomb: 'player-cat-bomb-0',
+    anchor: 'player-cat-anchor-0',
   },
   '1': {
     default: 'player-cat-idle-1',
@@ -27,6 +29,8 @@ export const PLAYER_CAT_ANIMATION_KEYS = {
     convert: 'player-cat-convert-1',
     push: 'player-cat-push-1',
     mine: 'player-cat-mine-1',
+    bomb: 'player-cat-bomb-1',
+    anchor: 'player-cat-anchor-1',
   },
 } as const;
 
@@ -37,10 +41,14 @@ const PLAYER_CAT_SOURCES = {
 
 const READY_CARD_FALLBACK_PREFIX = 'ready-card-fallback-';
 const CAT_SPRITESHEET_COLUMNS = 16;
+const BOMB_ROW_INDEX = 2;
+const BOMB_ANIMATION_FRAMES = 1;
 const BLOCKER_ROW_INDEX = 3;
 const BLOCKER_ANIMATION_FRAMES = 4;
 const CONVERT_ROW_INDEX = 11;
 const CONVERT_ANIMATION_FRAMES = 4;
+const ANCHOR_ROW_INDEX = 12;
+const ANCHOR_ANIMATION_FRAMES = 8;
 const PUSH_ROW_INDEX = 4;
 const PUSH_ANIMATION_FRAMES = 10;
 const MINE_ROW_INDEX = 7;
@@ -156,6 +164,14 @@ function createFallbackFrames(scene: Phaser.Scene) {
 }
 
 function getFrameRangeForVariant(variant: CardAnimationVariant) {
+  if (variant === 'bomb') {
+    const start = BOMB_ROW_INDEX * CAT_SPRITESHEET_COLUMNS;
+    return {
+      start,
+      end: start + BOMB_ANIMATION_FRAMES - 1,
+    };
+  }
+
   if (variant === 'blocker') {
     const start = BLOCKER_ROW_INDEX * CAT_SPRITESHEET_COLUMNS;
     return {
@@ -177,6 +193,14 @@ function getFrameRangeForVariant(variant: CardAnimationVariant) {
     return {
       start,
       end: start + CONVERT_ANIMATION_FRAMES - 1,
+    };
+  }
+
+  if (variant === 'anchor') {
+    const start = ANCHOR_ROW_INDEX * CAT_SPRITESHEET_COLUMNS;
+    return {
+      start,
+      end: start + ANCHOR_ANIMATION_FRAMES - 1,
     };
   }
 

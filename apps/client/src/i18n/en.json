@@ -39,13 +39,21 @@
       "name": "Convert Cat",
       "description": "Can only be placed next to an enemy cat and flips one adjacent enemy cat to your color after placement."
     },
+    "bomb": {
+      "name": "Bomb Cat",
+      "description": "Explodes after 2 turns and clears all 8 adjacent cells along with its own."
+    },
     "push": {
       "name": "Push Cat",
       "description": "Can only be placed if there is an occupied cell directly above, below, left, or right. After placement, pushes one adjacent occupied cell one step outward."
     },
     "mine": {
       "name": "Mine Cat",
-      "description": "Explodes after 2 turns and clears all 8 adjacent cells along with its own."
+      "description": "Arms one adjacent empty cell for 2 turns, then explodes only that cell. The Mine Cat itself survives. The opponent cannot see that cell or its timer unless one of their cats can see it."
+    },
+    "anchor": {
+      "name": "Anchor Cat",
+      "description": "Acts like a normal cat, but it cannot be pushed or recolored. It can only be destroyed by an explosion."
     },
     "normal": {
       "name": "Common Cat",
@@ -61,6 +69,8 @@
     "matchDraw": "The match ends in a draw",
     "yourTurn": "Your turn",
     "waitingForOpponentTurn": "Waiting for the opponent's turn",
+    "invalidTarget": "Invalid target",
+    "noAvailableTarget": "No valid target",
     "waitingForOpponentReady": "Waiting for the other player to press Ready...",
     "roundScore": "Round {round}/{maxRounds} | Wins: {left} - {right} | Draws: {draws}",
     "currentTurnRoundScore": "Round {round}/{maxRounds} | Turn: {player} | Wins: {left} - {right} | Draws: {draws}",

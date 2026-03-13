@@ -1,9 +1,14 @@
 import { READY_CARD_POOL_SIZE } from './constants.js';
 
-export type CardAnimationVariant = 'default' | 'blocker' | 'convert' | 'push' | 'mine';
+export type CardAnimationVariant = 'default' | 'blocker' | 'convert' | 'push' | 'mine' | 'bomb' | 'anchor';
 
 export interface CardVisualProfile {
   animation: CardAnimationVariant;
+}
+
+export interface CardRuleProfile {
+  immuneToPush: boolean;
+  immuneToConvert: boolean;
 }
 
 export interface PlacementLockAuraMechanicDefinition {
@@ -23,6 +28,17 @@ export interface DelayedExplosionMechanicDefinition {
   includeDiagonals: true;
   clearSelf: true;
   target: 'allCells';
+}
+
+export interface HiddenMineMechanicDefinition {
+  type: 'hiddenMine';
+  trigger: 'onPlace';
+  delayTurns: number;
+  radius: 1;
+  includeDiagonals: true;
+  clearSelf: true;
+  target: 'emptyNeighbors';
+  maxTargets: 1;
 }
 
 export interface AdjacentConvertMechanicDefinition {
@@ -46,6 +62,7 @@ export interface AdjacentPushMechanicDefinition {
 export type CardMechanicDefinition =
   | PlacementLockAuraMechanicDefinition
   | DelayedExplosionMechanicDefinition
+  | HiddenMineMechanicDefinition
   | AdjacentConvertMechanicDefinition
   | AdjacentPushMechanicDefinition;
 
@@ -63,9 +80,10 @@ export interface ArmedMineEffect {
   sourcePlayerID: string;
   sourceCardID: number;
   sourceBoardIndex: number;
-  radius: 1;
-  includeDiagonals: true;
-  clearSelf: true;
+  radius: number;
+  includeDiagonals: boolean;
+  clearSelf: boolean;
+  visibility: 'public' | 'proximity';
 }
 
 export type BoardCellEffect = PlacementLockEffect | ArmedMineEffect;
@@ -75,13 +93,16 @@ export interface CardDefinition {
   nameKey: string;
   descriptionKey: string;
   visual: CardVisualProfile;
+  rules: CardRuleProfile;
   mechanics: CardMechanicDefinition[];
 }
 
 const BLOCKER_CARD_IDS = new Set([0, 1, 2]);
-const CONVERT_CARD_IDS = new Set([3, 4, 5]);
-const MINE_CARD_IDS = new Set([6, 7, 8]);
-const PUSH_CARD_IDS = new Set([9, 10, 11]);
+const CONVERT_CARD_IDS = new Set([3, 4]);
+const BOMB_CARD_IDS = new Set([5, 6, 7]);
+const PUSH_CARD_IDS = new Set([8, 9, 10, 11]);
+const MINE_CARD_IDS = new Set([12, 13, 14]);
+const ANCHOR_CARD_IDS = new Set([15, 16]);
 
 const BLOCKER_MECHANIC: PlacementLockAuraMechanicDefinition = {
   type: 'placementLockAura',
@@ -102,6 +123,17 @@ const MINE_MECHANIC: DelayedExplosionMechanicDefinition = {
   target: 'allCells',
 };
 
+const HIDDEN_MINE_MECHANIC: HiddenMineMechanicDefinition = {
+  type: 'hiddenMine',
+  trigger: 'onPlace',
+  delayTurns: 2,
+  radius: 1,
+  includeDiagonals: true,
+  clearSelf: true,
+  target: 'emptyNeighbors',
+  maxTargets: 1,
+};
+
 const CONVERT_MECHANIC: AdjacentConvertMechanicDefinition = {
   type: 'adjacentConvert',
   trigger: 'onPlace',
@@ -120,6 +152,16 @@ const PUSH_MECHANIC: AdjacentPushMechanicDefinition = {
   maxTargets: 1,
 };
 
+const DEFAULT_RULES: CardRuleProfile = {
+  immuneToPush: false,
+  immuneToConvert: false,
+};
+
+const ANCHOR_RULES: CardRuleProfile = {
+  immuneToPush: true,
+  immuneToConvert: true,
+};
+
 const createBlockerCardDefinition = (id: number): CardDefinition => ({
   id,
   nameKey: 'cards.blocker.name',
@@ -127,16 +169,18 @@ const createBlockerCardDefinition = (id: number): CardDefinition => ({
   visual: {
     animation: 'blocker',
   },
+  rules: DEFAULT_RULES,
   mechanics: [BLOCKER_MECHANIC],
 });
 
-const createMineCardDefinition = (id: number): CardDefinition => ({
+const createBombCardDefinition = (id: number): CardDefinition => ({
   id,
-  nameKey: 'cards.mine.name',
-  descriptionKey: 'cards.mine.description',
+  nameKey: 'cards.bomb.name',
+  descriptionKey: 'cards.bomb.description',
   visual: {
-    animation: 'mine',
+    animation: 'bomb',
   },
+  rules: DEFAULT_RULES,
   mechanics: [MINE_MECHANIC],
 });
 
@@ -147,6 +191,7 @@ const createConvertCardDefinition = (id: number): CardDefinition => ({
   visual: {
     animation: 'convert',
   },
+  rules: DEFAULT_RULES,
   mechanics: [CONVERT_MECHANIC],
 });
 
@@ -157,7 +202,30 @@ const createPushCardDefinition = (id: number): CardDefinition => ({
   visual: {
     animation: 'push',
   },
+  rules: DEFAULT_RULES,
   mechanics: [PUSH_MECHANIC],
+});
+
+const createMineCardDefinition = (id: number): CardDefinition => ({
+  id,
+  nameKey: 'cards.mine.name',
+  descriptionKey: 'cards.mine.description',
+  visual: {
+    animation: 'mine',
+  },
+  rules: DEFAULT_RULES,
+  mechanics: [HIDDEN_MINE_MECHANIC],
+});
+
+const createAnchorCardDefinition = (id: number): CardDefinition => ({
+  id,
+  nameKey: 'cards.anchor.name',
+  descriptionKey: 'cards.anchor.description',
+  visual: {
+    animation: 'anchor',
+  },
+  rules: ANCHOR_RULES,
+  mechanics: [],
 });
 
 const createNormalCardDefinition = (id: number): CardDefinition => ({
@@ -167,6 +235,7 @@ const createNormalCardDefinition = (id: number): CardDefinition => ({
   visual: {
     animation: 'default',
   },
+  rules: DEFAULT_RULES,
   mechanics: [],
 });
 
@@ -177,11 +246,15 @@ const CARD_DEFINITIONS = Array.from({ length: READY_CARD_POOL_SIZE }, (_value, c
     ? createBlockerCardDefinition(cardID)
     : CONVERT_CARD_IDS.has(cardID)
       ? createConvertCardDefinition(cardID)
+      : BOMB_CARD_IDS.has(cardID)
+        ? createBombCardDefinition(cardID)
       : PUSH_CARD_IDS.has(cardID)
         ? createPushCardDefinition(cardID)
-    : MINE_CARD_IDS.has(cardID)
-      ? createMineCardDefinition(cardID)
-      : createNormalCardDefinition(cardID),
+        : MINE_CARD_IDS.has(cardID)
+          ? createMineCardDefinition(cardID)
+          : ANCHOR_CARD_IDS.has(cardID)
+            ? createAnchorCardDefinition(cardID)
+            : createNormalCardDefinition(cardID),
 );
 
 export const getCardDefinition = (cardID: number): CardDefinition =>
@@ -198,3 +271,12 @@ export const getAdjacentPushMechanic = (cardID: number): AdjacentPushMechanicDef
   getCardDefinition(cardID).mechanics.find(
     (mechanic): mechanic is AdjacentPushMechanicDefinition => mechanic.type === 'adjacentPush',
   ) ?? null;
+
+export const getHiddenMineMechanic = (cardID: number): HiddenMineMechanicDefinition | null =>
+  getCardDefinition(cardID).mechanics.find(
+    (mechanic): mechanic is HiddenMineMechanicDefinition => mechanic.type === 'hiddenMine',
+  ) ?? null;
+
+export const isPushImmuneCard = (cardID: number) => getCardDefinition(cardID).rules.immuneToPush;
+
+export const isConvertImmuneCard = (cardID: number) => getCardDefinition(cardID).rules.immuneToConvert;

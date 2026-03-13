@@ -7,7 +7,13 @@ import {
   READY_CARD_SELECTION_LIMIT,
 } from '../src/constants.js';
 import { getCardDefinition } from '../src/cards.js';
-import { ClickRaceGame, createGameplayState, createNextRoundState, getRoundStarter } from '../src/game.js';
+import {
+  ClickRaceGame,
+  createGameplayState,
+  createNextRoundState,
+  getRoundStarter,
+  getVisibleCellEffectsForPlayer,
+} from '../src/game.js';
 import type { ClickRaceState } from '../src/types.js';
 
 const selection = Array.from({ length: READY_CARD_SELECTION_LIMIT }, (_value, index) => index);
@@ -87,23 +93,30 @@ test('placeCat fills a cell and refills the same hand slot', () => {
   assert.equal(nextPlayer, '1');
 });
 
-test('blocker card metadata is exposed through the catalog', () => {
+test('special card metadata is exposed through the catalog', () => {
   const blockerCard = getCardDefinition(0);
   const convertCard = getCardDefinition(3);
-  const pushCard = getCardDefinition(9);
-  const mineCard = getCardDefinition(6);
-  const normalCard = getCardDefinition(12);
+  const bombCard = getCardDefinition(5);
+  const pushCard = getCardDefinition(8);
+  const mineCard = getCardDefinition(12);
+  const anchorCard = getCardDefinition(15);
+  const fallbackCard = getCardDefinition(99);
 
   assert.equal(blockerCard.visual.animation, 'blocker');
   assert.equal(blockerCard.mechanics[0]?.type, 'placementLockAura');
   assert.equal(convertCard.visual.animation, 'convert');
   assert.equal(convertCard.mechanics[0]?.type, 'adjacentConvert');
+  assert.equal(bombCard.visual.animation, 'bomb');
+  assert.equal(bombCard.mechanics[0]?.type, 'delayedExplosion');
   assert.equal(pushCard.visual.animation, 'push');
   assert.equal(pushCard.mechanics[0]?.type, 'adjacentPush');
   assert.equal(mineCard.visual.animation, 'mine');
-  assert.equal(mineCard.mechanics[0]?.type, 'delayedExplosion');
-  assert.equal(normalCard.visual.animation, 'default');
-  assert.equal(normalCard.mechanics.length, 0);
+  assert.equal(mineCard.mechanics[0]?.type, 'hiddenMine');
+  assert.equal(anchorCard.visual.animation, 'anchor');
+  assert.equal(anchorCard.rules.immuneToPush, true);
+  assert.equal(anchorCard.rules.immuneToConvert, true);
+  assert.equal(fallbackCard.visual.animation, 'default');
+  assert.equal(fallbackCard.mechanics.length, 0);
 });
 
 test('a convert cat cannot be placed without an adjacent enemy cat', () => {
@@ -175,6 +188,39 @@ test('a convert cat must target exactly one adjacent enemy cat', () => {
   );
 
   assert.equal(wrongTargetResult, 'INVALID_MOVE');
+});
+
+test('a convert cat cannot target an anchor cat', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.board[17] = { playerID: '1', cardID: 15, move: 1 };
+
+  const result = placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 2 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    3,
+    3,
+    2,
+  );
+
+  assert.equal(result, 'INVALID_MOVE');
+  assert.deepEqual(state.board[17], {
+    playerID: '1',
+    cardID: 15,
+    move: 1,
+  });
 });
 
 test('a convert cat flips one adjacent enemy cat to the placed cat team', () => {
@@ -324,6 +370,41 @@ test('a push cat must target one adjacent orthogonal occupied cell', () => {
   );
 
   assert.equal(diagonalTargetResult, 'INVALID_MOVE');
+});
+
+test('a push cat cannot target an anchor cat', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [8, 1, 2, 3, 4];
+  state.players['0'].deck = [5, 6, 7, 9, 10];
+  state.board[17] = { playerID: '1', cardID: 15, move: 1 };
+
+  const result = placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 2 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+    3,
+    2,
+  );
+
+  assert.equal(result, 'INVALID_MOVE');
+  assert.deepEqual(state.board[17], {
+    playerID: '1',
+    cardID: 15,
+    move: 1,
+  });
 });
 
 test('a push cat shifts an adjacent occupied orthogonal cell outward by one cell', () => {
@@ -588,7 +669,7 @@ test('a blocked cell rejects placement until the second following turn finishes'
   assert.equal(state.board[16]?.playerID, '1');
 });
 
-test('reapplying a placement lock replaces the previous lock on the same cell', () => {
+test('overlapping blocker auras keep separate timers on the same cell', () => {
   const state = createGameplayState(
     {
       '0': selection,
@@ -626,6 +707,13 @@ test('reapplying a placement lock replaces the previous lock on the same cell', 
   assert.deepEqual(state.cellEffects[24], [
     {
       type: 'placementLock',
+      remainingTurns: 1,
+      sourcePlayerID: '0',
+      sourceCardID: 0,
+      sourceBoardIndex: 16,
+    },
+    {
+      type: 'placementLock',
       remainingTurns: 2,
       sourcePlayerID: '1',
       sourceCardID: 0,
@@ -634,7 +722,7 @@ test('reapplying a placement lock replaces the previous lock on the same cell', 
   ]);
 });
 
-test('placing a mine card arms it for two turns on its own cell', () => {
+test('destroying one blocker removes only its locks and preserves the other timer', () => {
   const state = createGameplayState(
     {
       '0': selection,
@@ -642,8 +730,70 @@ test('placing a mine card arms it for two turns on its own cell', () => {
     },
     orderedShuffle,
   );
-  state.players['0'].hand = [6, 1, 2, 3, 4];
-  state.players['0'].deck = [5, 7, 8, 9, 10];
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 1 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    4,
+    4,
+    0,
+  );
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '1', turn: 2 },
+      playerID: '1',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    2,
+    2,
+    0,
+  );
+
+  state.board[32] = null;
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 3 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    6,
+    6,
+    1,
+  );
+
+  assert.deepEqual(state.cellEffects[24], [
+    {
+      type: 'placementLock',
+      remainingTurns: 1,
+      sourcePlayerID: '1',
+      sourceCardID: 0,
+      sourceBoardIndex: 16,
+    },
+  ]);
+  assert.equal(state.cellEffects[40].length, 0);
+});
+
+test('placing a bomb cat arms it for two turns on its own cell', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [5, 1, 2, 3, 4];
+  state.players['0'].deck = [6, 7, 8, 9, 10];
 
   placeCat(
     {
@@ -659,20 +809,21 @@ test('placing a mine card arms it for two turns on its own cell', () => {
   );
 
   assert.deepEqual(state.cellEffects[24], [
-    {
-      type: 'armedMine',
-      remainingTurns: 2,
-      sourcePlayerID: '0',
-      sourceCardID: 6,
-      sourceBoardIndex: 24,
-      radius: 1,
-      includeDiagonals: true,
-      clearSelf: true,
-    },
-  ]);
+      {
+        type: 'armedMine',
+        remainingTurns: 2,
+        sourcePlayerID: '0',
+        sourceCardID: 5,
+        sourceBoardIndex: 24,
+        radius: 1,
+        includeDiagonals: true,
+        clearSelf: true,
+        visibility: 'public',
+      },
+    ]);
 });
 
-test('a mine explodes after two following turns and clears the full 3x3 area', () => {
+test('a bomb cat explodes after two following turns and clears the full 3x3 area', () => {
   const state = createGameplayState(
     {
       '0': selection,
@@ -680,9 +831,9 @@ test('a mine explodes after two following turns and clears the full 3x3 area', (
     },
     orderedShuffle,
   );
-  state.players['0'].hand = [6, 1, 2, 3, 4];
-  state.players['0'].deck = [5, 7, 8, 9, 10];
-  state.players['1'].hand = [9, 10, 11, 12, 13];
+  state.players['0'].hand = [5, 1, 2, 3, 4];
+  state.players['0'].deck = [6, 7, 8, 9, 10];
+  state.players['1'].hand = [0, 10, 11, 12, 13];
   state.players['1'].deck = [14];
 
   placeCat(
@@ -743,6 +894,203 @@ test('a mine explodes after two following turns and clears the full 3x3 area', (
 
   assert.equal(state.board[0]?.playerID, '1');
   assert.equal(state.cellEffects[24].length, 0);
+});
+
+test('a mine cat arms one adjacent empty cell with hidden proximity visibility', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [12, 1, 2, 3, 4];
+  state.players['0'].deck = [5, 6, 7, 8, 9];
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 1 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+    2,
+    2,
+  );
+
+  assert.deepEqual(state.cellEffects[16], [
+    {
+      type: 'armedMine',
+      remainingTurns: 2,
+      sourcePlayerID: '0',
+      sourceCardID: 12,
+      sourceBoardIndex: 16,
+      radius: 0,
+      includeDiagonals: false,
+      clearSelf: true,
+      visibility: 'proximity',
+    },
+  ]);
+
+  const ownerEffects = getVisibleCellEffectsForPlayer(state.board, state.cellEffects, '0');
+  const opponentEffects = getVisibleCellEffectsForPlayer(state.board, state.cellEffects, '1');
+
+  assert.equal(ownerEffects[16][0]?.type, 'armedMine');
+  assert.equal(opponentEffects[16].length, 0);
+});
+
+test('a mine cat becomes visible to a player whose cat is next to the mined cell', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [12, 1, 2, 3, 4];
+  state.players['0'].deck = [5, 6, 7, 8, 9];
+  state.board[15] = { playerID: '1', cardID: 8, move: 0 };
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 1 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+    2,
+    2,
+  );
+
+  const opponentEffects = getVisibleCellEffectsForPlayer(state.board, state.cellEffects, '1');
+  assert.equal(opponentEffects[16][0]?.type, 'armedMine');
+  assert.equal(opponentEffects[16][0]?.remainingTurns, 2);
+});
+
+test('a mine cat explodes only the chosen cell and survives itself', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [12, 1, 2, 3, 4];
+  state.players['0'].deck = [5, 6, 7, 8, 9];
+  state.players['1'].hand = [0, 9, 10, 11, 13];
+  state.players['1'].deck = [14];
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 1 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+    2,
+    2,
+  );
+
+  state.board[16] = { playerID: '1', cardID: 9, move: 0 };
+  state.board[24] = { playerID: '0', cardID: 12, move: 1 };
+  state.board[0] = { playerID: '1', cardID: 14, move: 0 };
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '1', turn: 2 },
+      playerID: '1',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    0,
+    1,
+    0,
+  );
+
+  assert.equal(state.cellEffects[16][0]?.type, 'armedMine');
+  assert.equal(state.cellEffects[16][0]?.remainingTurns, 1);
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 3 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    6,
+    6,
+    1,
+  );
+
+  assert.equal(state.board[16], null);
+  assert.deepEqual(state.board[24], { playerID: '0', cardID: 12, move: 1 });
+  assert.equal(state.board[0]?.playerID, '1');
+  assert.equal(state.cellEffects[16].length, 0);
+});
+
+test('placing a cat onto a mined cell removes that cat immediately and clears the mine timer', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [12, 1, 2, 3, 4];
+  state.players['0'].deck = [5, 6, 7, 8, 9];
+  state.players['1'].hand = [0, 9, 10, 11, 13];
+  state.players['1'].deck = [14];
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 1 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+    2,
+    2,
+  );
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '1', turn: 2 },
+      playerID: '1',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    2,
+    2,
+    0,
+  );
+
+  assert.equal(state.board[16], null);
+  assert.equal(state.cellEffects[16].length, 0);
+  assert.deepEqual(state.board[24], {
+    playerID: '0',
+    cardID: 12,
+    move: 1,
+  });
+  assert.equal(state.players['1'].hand[0], 14);
 });
 
 test('winning a round stores the result and waits for the next round reset', () => {
@@ -854,7 +1202,7 @@ test('a round is a draw when the last remaining card is placed without a line', 
   state.players['0'].hand = [null, null, null, null, null];
   state.players['0'].deck = [];
   state.players['0'].placedCount = READY_CARD_SELECTION_LIMIT;
-  state.players['1'].hand = [12, null, null, null, null];
+  state.players['1'].hand = [0, null, null, null, null];
   state.players['1'].deck = [];
   state.players['1'].placedCount = READY_CARD_SELECTION_LIMIT - 1;
 
@@ -898,7 +1246,7 @@ test('the third round can end the whole match in a draw', () => {
   state.players['0'].hand = [null, null, null, null, null];
   state.players['0'].deck = [];
   state.players['0'].placedCount = READY_CARD_SELECTION_LIMIT;
-  state.players['1'].hand = [12, null, null, null, null];
+  state.players['1'].hand = [0, null, null, null, null];
   state.players['1'].deck = [];
   state.players['1'].placedCount = READY_CARD_SELECTION_LIMIT - 1;
 

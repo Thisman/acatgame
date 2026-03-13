@@ -56,6 +56,8 @@ export class RoomScene extends Phaser.Scene {
   private localError: UiError | null = null;
   private copyFeedbackState: CopyFeedbackState = 'default';
   private resetCopyLabelEvent: Phaser.Time.TimerEvent | null = null;
+  private transientTurnMessageKey: string | null = null;
+  private transientTurnMessageEvent: Phaser.Time.TimerEvent | null = null;
 
   constructor() {
     super('RoomScene');
@@ -64,7 +66,11 @@ export class RoomScene extends Phaser.Scene {
   create() {
     this.cameras.main.setBackgroundColor(UI_THEME.background);
 
-    this.boardView.create({ scene: this, controller: roomController });
+    this.boardView.create({
+      scene: this,
+      controller: roomController,
+      showTurnMessage: (message) => this.showTransientTurnMessage(message),
+    });
     this.readyView.create({ scene: this, controller: roomController });
     this.boardView.hide();
     this.readyView.hide();
@@ -352,6 +358,7 @@ export class RoomScene extends Phaser.Scene {
     const matchResult = snapshot?.matchResult ?? state.gameState?.G?.matchResult ?? null;
     const currentPlayer = snapshot?.currentPlayer ?? state.gameState?.ctx?.currentPlayer ?? null;
     const sessionPlayerID = state.session?.playerID ?? null;
+    const transientTurnMessage = this.transientTurnMessageKey ? t(this.transientTurnMessageKey) : '';
 
     this.phaseTurnText.setText('');
     this.phaseTurnText.setVisible(false);
@@ -395,7 +402,10 @@ export class RoomScene extends Phaser.Scene {
           : t('game.roundWinner', { round: roundResult.round, player: getPlayerLabel(roundResult.winner ?? '0') }),
       );
     } else {
-      if (currentPlayer && sessionPlayerID) {
+      if (transientTurnMessage) {
+        this.phaseTurnText.setText(transientTurnMessage);
+        this.phaseTurnText.setVisible(true);
+      } else if (currentPlayer && sessionPlayerID) {
         this.phaseTurnText.setText(
           currentPlayer === sessionPlayerID ? t('game.yourTurn') : t('game.waitingForOpponentTurn'),
         );
@@ -528,6 +538,16 @@ export class RoomScene extends Phaser.Scene {
     return t('actions.copyCode');
   }
 
+  private showTransientTurnMessage(messageKey: string) {
+    this.transientTurnMessageKey = messageKey;
+    this.transientTurnMessageEvent?.destroy();
+    this.transientTurnMessageEvent = this.time.delayedCall(1400, () => {
+      this.transientTurnMessageKey = null;
+      this.renderView();
+    });
+    this.renderView();
+  }
+
   private onShutdown() {
     this.scale.off('resize', this.renderView, this);
     this.unsubscribe?.();
@@ -535,6 +555,7 @@ export class RoomScene extends Phaser.Scene {
     this.unsubscribeI18n?.();
     this.unsubscribeI18n = null;
     this.resetCopyLabelEvent?.destroy();
+    this.transientTurnMessageEvent?.destroy();
     this.readyView.destroy();
     this.boardView.destroy();
     this.overlay.destroy();

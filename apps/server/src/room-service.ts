@@ -20,6 +20,7 @@ import {
   type UpdateSelectionRequest,
   createGameplayState,
   createNextRoundState,
+  getVisibleCellEffectsForPlayer,
   getRoundStarter,
 } from '@acatgame/game-core';
 import type { LobbyClient as LobbyClientType } from 'boardgame.io/client';
@@ -160,13 +161,13 @@ export class RoomService {
   async markPresence(matchID: string, request: PresencePingRequest): Promise<RoomSnapshot> {
     this.assertAuthorized(matchID, request.playerID, request.credentials);
     this.registry.touch(matchID, request.playerID);
-    return this.getRoomSnapshot(matchID);
+    return this.getRoomSnapshot(matchID, request.playerID);
   }
 
   async setReady(matchID: string, request: ReadyRoomRequest): Promise<RoomSnapshot> {
     this.assertAuthorized(matchID, request.playerID, request.credentials);
 
-    const snapshot = await this.getRoomSnapshot(matchID);
+    const snapshot = await this.getRoomSnapshot(matchID, request.playerID);
 
     if (snapshot.phase === 'waiting') {
       throw new HttpError(409, ERROR_CODES.ROOM_WAITING_FOR_PLAYERS, 'Room is still waiting for players.');
@@ -188,7 +189,7 @@ export class RoomService {
 
     this.registry.setReady(matchID, request.playerID, request.ready);
 
-    const nextSnapshot = await this.getRoomSnapshot(matchID);
+    const nextSnapshot = await this.getRoomSnapshot(matchID, request.playerID);
     const occupiedPlayerIDs = nextSnapshot.seats.filter((seat) => seat.occupied).map((seat) => seat.playerID);
     const everyoneReady =
       occupiedPlayerIDs.length === nextSnapshot.requiredPlayers &&
@@ -205,13 +206,13 @@ export class RoomService {
       this.registry.resetReady(matchID);
     }
 
-    return this.getRoomSnapshot(matchID);
+    return this.getRoomSnapshot(matchID, request.playerID);
   }
 
   async updateSelection(matchID: string, request: UpdateSelectionRequest): Promise<RoomSnapshot> {
     this.assertAuthorized(matchID, request.playerID, request.credentials);
 
-    const snapshot = await this.getRoomSnapshot(matchID);
+    const snapshot = await this.getRoomSnapshot(matchID, request.playerID);
 
     if (snapshot.phase === 'waiting') {
       throw new HttpError(409, ERROR_CODES.ROOM_WAITING_FOR_PLAYERS, 'Room is still waiting for players.');
@@ -228,10 +229,10 @@ export class RoomService {
     const selectedCardIDs = this.validateSelection(request.selectedCardIDs);
     this.registry.setSelectedCardIDs(matchID, request.playerID, selectedCardIDs);
 
-    return this.getRoomSnapshot(matchID);
+    return this.getRoomSnapshot(matchID, request.playerID);
   }
 
-  async getRoomSnapshot(matchID: string): Promise<RoomSnapshot> {
+  async getRoomSnapshot(matchID: string, viewerPlayerID?: string | null): Promise<RoomSnapshot> {
     if (this.registry.isClosed(matchID)) {
       throw new HttpError(410, ERROR_CODES.ROOM_CLOSED, 'Room is closed.');
     }
@@ -243,6 +244,7 @@ export class RoomService {
     const cellEffects =
       storedState?.G?.cellEffects ??
       Array.from({ length: Math.max(board.length, CAT_MATCH_BOARD_SIZE * CAT_MATCH_BOARD_SIZE) }, () => []);
+    const visibleCellEffects = getVisibleCellEffectsForPlayer(board, cellEffects, viewerPlayerID);
     const roundWinsByPlayer = storedState?.G?.roundWinsByPlayer ?? { '0': 0, '1': 0 };
     const drawRounds = storedState?.G?.drawRounds ?? 0;
     const roundResult = storedState?.G?.roundResult ?? null;
@@ -285,7 +287,7 @@ export class RoomService {
       currentPlayer: storedState?.ctx?.currentPlayer ?? null,
       winner,
       board,
-      cellEffects,
+      cellEffects: visibleCellEffects,
       round: storedState?.G?.currentRound ?? 1,
       roundWinsByPlayer,
       drawRounds,

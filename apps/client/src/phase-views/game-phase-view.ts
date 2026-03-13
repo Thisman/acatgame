@@ -3,7 +3,10 @@ import {
   CAT_MATCH_BOARD_SIZE,
   CAT_MATCH_HAND_SIZE,
   getAdjacentConvertMechanic,
+  getHiddenMineMechanic,
   getAdjacentPushMechanic,
+  isConvertImmuneCard,
+  isPushImmuneCard,
   type BoardCell,
   type BoardCellEffect,
   type RoomSnapshot,
@@ -31,6 +34,7 @@ import { createCatCardView, renderCatCard, type CatCardView } from '../ui/canvas
 interface GamePhaseViewDeps {
   scene: Phaser.Scene;
   controller: RoomController;
+  showTurnMessage: (message: string) => void;
 }
 
 interface GridCellView {
@@ -48,7 +52,7 @@ interface ComputedGameLayout {
   handStartX: number;
 }
 
-type TargetedPlacementMode = 'convert' | 'push';
+type TargetedPlacementMode = 'convert' | 'push' | 'mine';
 
 interface PendingTargetedPlacement {
   mode: TargetedPlacementMode;
@@ -59,6 +63,14 @@ interface PendingTargetedPlacement {
   targetBoardIndexes: number[];
 }
 
+const CELL_TARGET_FILL = 0xf8d8ac;
+const CELL_PLACEMENT_FILL = 0xd9f1f6;
+const CELL_HOVER_FILL = 0xf5fcfe;
+const CELL_TARGET_BORDER = UI_THEME.accentBorderNumber;
+const CELL_PLACEMENT_BORDER = 0x8fc5cf;
+const CELL_SELECTION_TARGET_FILL = 0xa8c8d8;
+const CELL_SELECTION_TARGET_BORDER = 0x5f8799;
+
 const getBoardIndex = (cellX: number, cellY: number) => cellY * CAT_MATCH_BOARD_SIZE + cellX;
 
 const getTargetingModeForCard = (cardID: number | null): TargetedPlacementMode | null => {
@@ -68,6 +80,10 @@ const getTargetingModeForCard = (cardID: number | null): TargetedPlacementMode |
 
   if (cardID !== null && getAdjacentPushMechanic(cardID)) {
     return 'push';
+  }
+
+  if (cardID !== null && getHiddenMineMechanic(cardID)) {
+    return 'mine';
   }
 
   return null;
@@ -113,7 +129,7 @@ const getAdjacentEnemyBoardIndexes = (
       const targetBoardIndex = getBoardIndex(targetX, targetY);
       const targetCell = board[targetBoardIndex];
 
-      if (targetCell && targetCell.playerID !== playerID) {
+      if (targetCell && targetCell.playerID !== playerID && !isConvertImmuneCard(targetCell.cardID)) {
         targetBoardIndexes.push(targetBoardIndex);
       }
     }
@@ -156,8 +172,55 @@ const getAdjacentOccupiedOrthogonalBoardIndexes = (
 
     const targetBoardIndex = getBoardIndex(targetX, targetY);
 
-    if (board[targetBoardIndex]) {
+    if (board[targetBoardIndex] && !isPushImmuneCard(board[targetBoardIndex]!.cardID)) {
       targetBoardIndexes.push(targetBoardIndex);
+    }
+  }
+
+  return targetBoardIndexes;
+};
+
+const getAdjacentEmptyBoardIndexes = (
+  board: Array<BoardCell | null>,
+  cellX: number,
+  cellY: number,
+  cardID: number | null,
+) => {
+  const mechanic = cardID === null ? null : getHiddenMineMechanic(cardID);
+
+  if (!mechanic) {
+    return [];
+  }
+
+  const targetBoardIndexes: number[] = [];
+
+  for (let deltaY = -mechanic.radius; deltaY <= mechanic.radius; deltaY += 1) {
+    for (let deltaX = -mechanic.radius; deltaX <= mechanic.radius; deltaX += 1) {
+      if (deltaX === 0 && deltaY === 0) {
+        continue;
+      }
+
+      if (!mechanic.includeDiagonals && Math.abs(deltaX) + Math.abs(deltaY) !== 1) {
+        continue;
+      }
+
+      const targetX = cellX + deltaX;
+      const targetY = cellY + deltaY;
+
+      if (
+        targetX < 0 ||
+        targetX >= CAT_MATCH_BOARD_SIZE ||
+        targetY < 0 ||
+        targetY >= CAT_MATCH_BOARD_SIZE
+      ) {
+        continue;
+      }
+
+      const targetBoardIndex = getBoardIndex(targetX, targetY);
+
+      if (!board[targetBoardIndex]) {
+        targetBoardIndexes.push(targetBoardIndex);
+      }
     }
   }
 
@@ -179,6 +242,10 @@ const getTargetBoardIndexesForCard = (
 
   if (mode === 'push') {
     return getAdjacentOccupiedOrthogonalBoardIndexes(board, cellX, cellY, cardID);
+  }
+
+  if (mode === 'mine') {
+    return getAdjacentEmptyBoardIndexes(board, cellX, cellY, cardID);
   }
 
   return [];
@@ -406,6 +473,11 @@ export class GamePhaseView {
         );
         return;
       }
+
+      this.resetPlacementSelection();
+      this.deps.showTurnMessage('game.invalidTarget');
+      this.rerender();
+      return;
     }
 
     if (board[boardIndex]) {
@@ -420,6 +492,7 @@ export class GamePhaseView {
       const targetBoardIndexes = getTargetBoardIndexesForCard(board, cellX, cellY, sessionPlayerID, cardID);
 
       if (targetBoardIndexes.length === 0) {
+        this.deps.showTurnMessage('game.noAvailableTarget');
         return;
       }
 
@@ -517,32 +590,37 @@ export class GamePhaseView {
       const boardCell = board[boardIndex];
       const placementLock = getPlacementLockEffect(cellEffects[boardIndex]);
       const armedMine = getArmedMineEffect(cellEffects[boardIndex]);
+      const mined = Boolean(armedMine);
       const blocked = !boardCell && Boolean(placementLock);
       const hovered = this.hoveredCellKey === `${cell.x}:${cell.y}`;
       const pendingPlacement =
         this.pendingTargetedPlacement?.cellX === cell.x && this.pendingTargetedPlacement?.cellY === cell.y;
       const pendingPlacedCardID = pendingPlacement ? this.pendingTargetedPlacement?.cardID ?? null : null;
       const targetedCell = pendingTargetBoardIndexes.has(boardIndex);
+      const canPlaceHere = canPlay && this.selectedHandIndex !== null && !boardCell && !blocked;
       const targetedPlacementOptions =
         canPlay && targetingMode && !boardCell && !blocked
           ? getTargetBoardIndexesForCard(board, cell.x, cell.y, sessionPlayerID, selectedCardID)
           : [];
-      const targetedPlacementCandidate =
-        Boolean(targetingMode) &&
+      const placementCandidate =
+        canPlaceHere &&
         !this.pendingTargetedPlacement &&
-        !boardCell &&
-        !blocked &&
-        targetedPlacementOptions.length > 0;
+        (!targetingMode || targetedPlacementOptions.length > 0);
       const selectable = targetingMode
-        ? Boolean(targetedPlacementCandidate || pendingPlacement || targetedCell)
-        : canPlay && !boardCell && !blocked && this.selectedHandIndex !== null;
-      const fillColor = blocked
-        ? 0xf8d8ac
-        : targetedPlacementCandidate
-          ? 0xe6f6ef
-        : hovered && selectable
-          ? 0xfff7de
-          : UI_THEME.backgroundNumber;
+        ? Boolean(placementCandidate || pendingPlacement || targetedCell)
+        : canPlaceHere;
+      const statusHighlighted = blocked || mined;
+      const selectionTargetHighlighted = targetedCell;
+      const hoverHighlightedCell = !boardCell && hovered && selectable;
+      const fillColor = hoverHighlightedCell
+        ? CELL_HOVER_FILL
+        : !boardCell && selectionTargetHighlighted
+          ? CELL_SELECTION_TARGET_FILL
+        : !boardCell && statusHighlighted
+          ? CELL_TARGET_FILL
+          : placementCandidate
+            ? CELL_PLACEMENT_FILL
+            : UI_THEME.backgroundNumber;
 
       cell.tile.setVisible(this.visible);
       cell.tile.setPosition(centerX, centerY);
@@ -550,14 +628,16 @@ export class GamePhaseView {
       cell.tile.setFillStyle(fillColor, 1);
       if (boardCell || pendingPlacedCardID !== null) {
         cell.tile.setStrokeStyle();
-        } else {
-          cell.tile.setStrokeStyle(
-          blocked || targetedPlacementCandidate || (hovered && selectable) ? 3 : 2,
-          blocked
-            ? UI_THEME.accentBorderNumber
-            : targetedPlacementCandidate
-              ? 0x5f978c
-              : UI_THEME.surfaceStrongNumber,
+      } else {
+        cell.tile.setStrokeStyle(
+          statusHighlighted || selectionTargetHighlighted || placementCandidate || (hovered && selectable) ? 3 : 2,
+          statusHighlighted
+            ? CELL_TARGET_BORDER
+            : selectionTargetHighlighted
+              ? CELL_SELECTION_TARGET_BORDER
+              : placementCandidate
+                ? CELL_PLACEMENT_BORDER
+                : UI_THEME.surfaceStrongNumber,
           1,
         );
       }
@@ -590,7 +670,7 @@ export class GamePhaseView {
           hovered,
           selected: false,
           disabled: false,
-          faceTint: targetedCell ? 0xffd4bf : undefined,
+          faceTint: targetedCell ? CELL_SELECTION_TARGET_FILL : undefined,
           tooltipTitle: tooltipContent.title,
           tooltipText: tooltipContent.text,
         });
@@ -598,18 +678,23 @@ export class GamePhaseView {
         cell.card.container.setVisible(false);
       }
 
-      const showCellCounter = blocked || Boolean(boardCell && armedMine);
+      const showMineCounter = Boolean(armedMine);
+      const showCellCounter = showMineCounter || blocked;
       cell.lockLabel.setVisible(this.visible && showCellCounter);
       if (showCellCounter) {
-        cell.lockLabel.setText(String(placementLock?.remainingTurns ?? armedMine?.remainingTurns ?? ''));
-        if (blocked) {
-          cell.lockLabel.setPosition(centerX, centerY);
-          cell.lockLabel.setFontSize('24px');
-          cell.lockLabel.setColor('#F06060');
-        } else {
+        cell.lockLabel.setText(String(armedMine?.remainingTurns ?? placementLock?.remainingTurns ?? ''));
+        if (showMineCounter && boardCell) {
           cell.lockLabel.setPosition(centerX + gameLayout.cellSize * 0.22, centerY - gameLayout.cellSize * 0.22);
           cell.lockLabel.setFontSize('22px');
           cell.lockLabel.setColor('#FF8A3D');
+        } else if (showMineCounter) {
+          cell.lockLabel.setPosition(centerX, centerY);
+          cell.lockLabel.setFontSize('26px');
+          cell.lockLabel.setColor('#FF8A3D');
+        } else {
+          cell.lockLabel.setPosition(centerX, centerY);
+          cell.lockLabel.setFontSize('24px');
+          cell.lockLabel.setColor('#F06060');
         }
       }
     }

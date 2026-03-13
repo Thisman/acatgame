@@ -30,7 +30,17 @@ export function previewCellEffectsForPlacement(cellEffects?: Array<BoardCellEffe
 }
 
 export function getPlacementLockEffect(effects?: BoardCellEffect[] | null) {
-  return (effects ?? []).find((effect) => effect.type === 'placementLock' && effect.remainingTurns > 0) ?? null;
+  return (effects ?? []).reduce<BoardCellEffect | null>((activeEffect, effect) => {
+    if (effect.type !== 'placementLock' || effect.remainingTurns <= 0) {
+      return activeEffect;
+    }
+
+    if (!activeEffect || effect.remainingTurns > activeEffect.remainingTurns) {
+      return effect;
+    }
+
+    return activeEffect;
+  }, null);
 }
 
 export function getArmedMineEffect(effects?: BoardCellEffect[] | null) {

@@ -13,6 +13,9 @@ import {
   getAdjacentConvertMechanic,
   getAdjacentPushMechanic,
   getCardDefinition,
+  getHiddenMineMechanic,
+  isConvertImmuneCard,
+  isPushImmuneCard,
   type ArmedMineEffect,
   type BoardCellEffect,
 } from './cards.js';
@@ -42,6 +45,8 @@ const createEmptyBoard = () =>
 
 const createEmptyCellEffects = () =>
   Array.from({ length: CAT_MATCH_BOARD_SIZE * CAT_MATCH_BOARD_SIZE }, () => [] as BoardCellEffect[]);
+
+const getBoardIndex = (cellX: number, cellY: number) => cellY * CAT_MATCH_BOARD_SIZE + cellX;
 
 const cloneRoundResult = (result: RoundResult | null): RoundResult | null =>
   result
@@ -121,7 +126,7 @@ const resolveMineExplosions = (
           continue;
         }
 
-        const targetIndex = targetY * CAT_MATCH_BOARD_SIZE + targetX;
+        const targetIndex = getBoardIndex(targetX, targetY);
         G.board[targetIndex] = null;
         cellEffects[targetIndex] = cellEffects[targetIndex].filter((cellEffect) => cellEffect.type !== 'armedMine');
       }
@@ -165,11 +170,36 @@ const advanceCellEffects = (G: ClickRaceState): Array<BoardCellEffect[]> => {
   );
 
   resolveMineExplosions(G, nextCellEffects, explodedMines);
-  return nextCellEffects;
+  return pruneInactivePlacementLocks(G.board, nextCellEffects);
 };
 
 const hasPlacementLock = (effects: BoardCellEffect[]) =>
   effects.some((effect) => effect.type === 'placementLock' && effect.remainingTurns > 0);
+
+const isEffectBoundToOccupant = (effect: BoardCellEffect) =>
+  effect.type === 'armedMine' && effect.visibility === 'public';
+
+const isPlacementLockSourceActive = (board: Array<BoardCell | null>, effect: BoardCellEffect) => {
+  if (effect.type !== 'placementLock') {
+    return true;
+  }
+
+  const sourceCell = board[effect.sourceBoardIndex];
+  return Boolean(
+    sourceCell &&
+      sourceCell.playerID === effect.sourcePlayerID &&
+      sourceCell.cardID === effect.sourceCardID,
+  );
+};
+
+const pruneInactivePlacementLocks = (
+  board: Array<BoardCell | null>,
+  cellEffects: Array<BoardCellEffect[]>,
+) =>
+  cellEffects.map((effects) => effects.filter((effect) => isPlacementLockSourceActive(board, effect)));
+
+const hasTriggeredHiddenMine = (effects: BoardCellEffect[]) =>
+  effects.some((effect) => effect.type === 'armedMine' && effect.visibility === 'proximity');
 
 const getNeighborBoardIndexes = (
   cellX: number,
@@ -201,7 +231,7 @@ const getNeighborBoardIndexes = (
         continue;
       }
 
-      boardIndexes.push(targetY * CAT_MATCH_BOARD_SIZE + targetX);
+      boardIndexes.push(getBoardIndex(targetX, targetY));
     }
   }
 
@@ -218,7 +248,7 @@ const getAdjacentEnemyBoardIndexes = (
 ) =>
   getNeighborBoardIndexes(cellX, cellY, radius, includeDiagonals).filter((boardIndex) => {
     const cell = board[boardIndex];
-    return Boolean(cell && cell.playerID !== playerID);
+    return Boolean(cell && cell.playerID !== playerID && !isConvertImmuneCard(cell.cardID));
   });
 
 const getOccupiedNeighborBoardIndexes = (
@@ -229,8 +259,77 @@ const getOccupiedNeighborBoardIndexes = (
   includeDiagonals: boolean,
 ) =>
   getNeighborBoardIndexes(cellX, cellY, radius, includeDiagonals).filter((boardIndex) =>
-    Boolean(board[boardIndex]),
+    Boolean(board[boardIndex] && !isPushImmuneCard(board[boardIndex]!.cardID)),
   );
+
+const getEmptyNeighborBoardIndexes = (
+  board: Array<BoardCell | null>,
+  cellX: number,
+  cellY: number,
+  radius: number,
+  includeDiagonals: boolean,
+) =>
+  getNeighborBoardIndexes(cellX, cellY, radius, includeDiagonals).filter((boardIndex) => !board[boardIndex]);
+
+const canPlayerSeeBoardIndex = (board: Array<BoardCell | null>, boardIndex: number, playerID?: string | null) => {
+  if (!playerID) {
+    return false;
+  }
+
+  const cellX = boardIndex % CAT_MATCH_BOARD_SIZE;
+  const cellY = Math.floor(boardIndex / CAT_MATCH_BOARD_SIZE);
+
+  for (let deltaY = -1; deltaY <= 1; deltaY += 1) {
+    for (let deltaX = -1; deltaX <= 1; deltaX += 1) {
+      const targetX = cellX + deltaX;
+      const targetY = cellY + deltaY;
+
+      if (
+        targetX < 0 ||
+        targetX >= CAT_MATCH_BOARD_SIZE ||
+        targetY < 0 ||
+        targetY >= CAT_MATCH_BOARD_SIZE
+      ) {
+        continue;
+      }
+
+      if (board[getBoardIndex(targetX, targetY)]?.playerID === playerID) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
+const isEffectVisibleToPlayer = (
+  board: Array<BoardCell | null>,
+  boardIndex: number,
+  effect: BoardCellEffect,
+  playerID?: string | null,
+) => {
+  if (effect.type === 'placementLock') {
+    return true;
+  }
+
+  return effect.visibility === 'public' || canPlayerSeeBoardIndex(board, boardIndex, playerID);
+};
+
+export const getVisibleCellEffectsForPlayer = (
+  board: Array<BoardCell | null>,
+  cellEffects?: Array<BoardCellEffect[]> | null,
+  playerID?: string | null,
+) => {
+  const normalized = normalizeCellEffects(cellEffects);
+
+  for (let boardIndex = 0; boardIndex < normalized.length; boardIndex += 1) {
+    normalized[boardIndex] = normalized[boardIndex].filter((effect) =>
+      isEffectVisibleToPlayer(board, boardIndex, effect, playerID),
+    );
+  }
+
+  return normalized;
+};
 
 const applyOnPlaceMechanics = (
   G: ClickRaceState,
@@ -274,14 +373,20 @@ const applyOnPlaceMechanics = (
               continue;
             }
 
-            const targetIndex = targetY * CAT_MATCH_BOARD_SIZE + targetX;
+            const targetIndex = getBoardIndex(targetX, targetY);
 
             if (G.board[targetIndex]) {
               continue;
             }
 
             G.cellEffects[targetIndex] = [
-              ...G.cellEffects[targetIndex].filter((effect) => effect.type !== 'placementLock'),
+              ...G.cellEffects[targetIndex].filter(
+                (effect) =>
+                  effect.type !== 'placementLock' ||
+                  effect.sourceBoardIndex !== boardIndex ||
+                  effect.sourcePlayerID !== playerID ||
+                  effect.sourceCardID !== cardID,
+              ),
               {
                 type: 'placementLock',
                 remainingTurns: mechanic.durationTurns,
@@ -306,6 +411,28 @@ const applyOnPlaceMechanics = (
             radius: mechanic.radius,
             includeDiagonals: mechanic.includeDiagonals,
             clearSelf: mechanic.clearSelf,
+            visibility: 'public',
+          },
+        ];
+        break;
+      }
+      case 'hiddenMine': {
+        if (selectedTargetBoardIndex === null) {
+          break;
+        }
+
+        G.cellEffects[selectedTargetBoardIndex] = [
+          ...G.cellEffects[selectedTargetBoardIndex].filter((effect) => effect.type !== 'armedMine'),
+          {
+            type: 'armedMine',
+            remainingTurns: mechanic.delayTurns,
+            sourcePlayerID: playerID,
+            sourceCardID: cardID,
+            sourceBoardIndex: selectedTargetBoardIndex,
+            radius: 0,
+            includeDiagonals: false,
+            clearSelf: true,
+            visibility: 'proximity',
           },
         ];
         break;
@@ -317,7 +444,7 @@ const applyOnPlaceMechanics = (
 
         const targetCell = G.board[selectedTargetBoardIndex];
 
-        if (!targetCell || targetCell.playerID === playerID) {
+        if (!targetCell || targetCell.playerID === playerID || isConvertImmuneCard(targetCell.cardID)) {
           break;
         }
 
@@ -336,7 +463,7 @@ const applyOnPlaceMechanics = (
 
         const targetCell = G.board[selectedTargetBoardIndex];
 
-        if (!targetCell) {
+        if (!targetCell || isPushImmuneCard(targetCell.cardID)) {
           break;
         }
 
@@ -363,7 +490,7 @@ const applyOnPlaceMechanics = (
           break;
         }
 
-        const destinationBoardIndex = destinationY * CAT_MATCH_BOARD_SIZE + destinationX;
+        const destinationBoardIndex = getBoardIndex(destinationX, destinationY);
 
         if (G.board[destinationBoardIndex]) {
           break;
@@ -371,14 +498,16 @@ const applyOnPlaceMechanics = (
 
         G.board[destinationBoardIndex] = targetCell;
         G.board[selectedTargetBoardIndex] = null;
+        const movingEffects = G.cellEffects[selectedTargetBoardIndex].filter(isEffectBoundToOccupant);
+        const stayingEffects = G.cellEffects[selectedTargetBoardIndex].filter((effect) => !isEffectBoundToOccupant(effect));
         G.cellEffects[destinationBoardIndex] = [
           ...G.cellEffects[destinationBoardIndex],
-          ...G.cellEffects[selectedTargetBoardIndex].map((effect) => ({
+          ...movingEffects.map((effect) => ({
             ...effect,
             sourceBoardIndex: destinationBoardIndex,
           })),
         ];
-        G.cellEffects[selectedTargetBoardIndex] = [];
+        G.cellEffects[selectedTargetBoardIndex] = stayingEffects;
         affectedBoardIndex = destinationBoardIndex;
         break;
       }
@@ -482,7 +611,7 @@ const buildClientState = (G: ClickRaceState, playerID?: string | null): ClickRac
 
   return {
     board: [...G.board],
-    cellEffects: normalizeCellEffects(G.cellEffects),
+    cellEffects: getVisibleCellEffectsForPlayer(G.board, G.cellEffects, playerID),
     currentRound: G.currentRound,
     roundWinsByPlayer: { ...G.roundWinsByPlayer },
     drawRounds: G.drawRounds,
@@ -631,7 +760,7 @@ const placeCatMove: MoveFn<ClickRaceState> = (
     return INVALID_MOVE;
   }
 
-  const boardIndex = cellY * CAT_MATCH_BOARD_SIZE + cellX;
+  const boardIndex = getBoardIndex(cellX, cellY);
 
   if (G.board[boardIndex]) {
     return INVALID_MOVE;
@@ -650,9 +779,10 @@ const placeCatMove: MoveFn<ClickRaceState> = (
 
   const convertMechanic = getAdjacentConvertMechanic(cardID);
   const pushMechanic = getAdjacentPushMechanic(cardID);
+  const hiddenMineMechanic = getHiddenMineMechanic(cardID);
   let selectedTargetBoardIndex: number | null = null;
 
-  if (convertMechanic || pushMechanic) {
+  if (convertMechanic || pushMechanic || hiddenMineMechanic) {
     const validTargetBoardIndexes = convertMechanic
       ? getAdjacentEnemyBoardIndexes(
           G.board,
@@ -662,6 +792,14 @@ const placeCatMove: MoveFn<ClickRaceState> = (
           convertMechanic.radius,
           convertMechanic.includeDiagonals,
         )
+      : hiddenMineMechanic
+        ? getEmptyNeighborBoardIndexes(
+            G.board,
+            cellX,
+            cellY,
+            hiddenMineMechanic.radius,
+            hiddenMineMechanic.includeDiagonals,
+          )
       : getOccupiedNeighborBoardIndexes(
           G.board,
           cellX,
@@ -688,7 +826,7 @@ const placeCatMove: MoveFn<ClickRaceState> = (
       return INVALID_MOVE;
     }
 
-    selectedTargetBoardIndex = normalizedTargetY * CAT_MATCH_BOARD_SIZE + normalizedTargetX;
+    selectedTargetBoardIndex = getBoardIndex(normalizedTargetX, normalizedTargetY);
 
     if (!validTargetBoardIndexes.includes(selectedTargetBoardIndex)) {
       return INVALID_MOVE;
@@ -703,6 +841,10 @@ const placeCatMove: MoveFn<ClickRaceState> = (
 
   playerState.hand[handIndex] = playerState.deck.shift() ?? null;
   playerState.placedCount += 1;
+  if (hasTriggeredHiddenMine(G.cellEffects[boardIndex] ?? [])) {
+    G.board[boardIndex] = null;
+    G.cellEffects[boardIndex] = G.cellEffects[boardIndex].filter((effect) => effect.type !== 'armedMine');
+  }
   G.cellEffects = advanceCellEffects(G);
 
   let affectedBoardIndex: number | null = null;
@@ -719,6 +861,8 @@ const placeCatMove: MoveFn<ClickRaceState> = (
       selectedTargetBoardIndex,
     );
   }
+
+  G.cellEffects = pruneInactivePlacementLocks(G.board, G.cellEffects);
 
   refreshPlayerSummaries(G);
 

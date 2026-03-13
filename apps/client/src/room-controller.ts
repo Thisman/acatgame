@@ -155,9 +155,7 @@ export class RoomController {
       return;
     }
 
-    this.snapshot = await this.request<RoomSnapshot>(`/api/rooms/${this.session.matchID}`);
-    await this.syncBoardClient();
-    this.emit();
+    await this.sendPresence();
   }
 
   async placeCat(cellX: number, cellY: number, handIndex: number, targetX?: number, targetY?: number) {
