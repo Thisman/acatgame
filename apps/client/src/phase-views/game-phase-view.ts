@@ -8,6 +8,7 @@ import {
 } from '@acatgame/game-core';
 
 import {
+  getArmedMineEffect,
   getCardTooltipContent,
   getPlacementLockEffect,
   normalizeCellEffects,
@@ -294,6 +295,7 @@ export class GamePhaseView {
       const boardIndex = cell.y * CAT_MATCH_BOARD_SIZE + cell.x;
       const boardCell = board[boardIndex];
       const placementLock = getPlacementLockEffect(cellEffects[boardIndex]);
+      const armedMine = getArmedMineEffect(cellEffects[boardIndex]);
       const blocked = !boardCell && Boolean(placementLock);
       const hovered = this.hoveredCellKey === `${cell.x}:${cell.y}`;
       const selectable = canPlay && !boardCell && !blocked && this.selectedHandIndex !== null;
@@ -342,10 +344,19 @@ export class GamePhaseView {
         cell.card.container.setVisible(false);
       }
 
-      cell.lockLabel.setVisible(this.visible && blocked);
-      if (blocked) {
-        cell.lockLabel.setPosition(centerX, centerY);
-        cell.lockLabel.setText(String(placementLock?.remainingTurns ?? ''));
+      const showCellCounter = blocked || Boolean(boardCell && armedMine);
+      cell.lockLabel.setVisible(this.visible && showCellCounter);
+      if (showCellCounter) {
+        cell.lockLabel.setText(String(placementLock?.remainingTurns ?? armedMine?.remainingTurns ?? ''));
+        if (blocked) {
+          cell.lockLabel.setPosition(centerX, centerY);
+          cell.lockLabel.setFontSize('24px');
+          cell.lockLabel.setColor('#F06060');
+        } else {
+          cell.lockLabel.setPosition(centerX + gameLayout.cellSize * 0.22, centerY - gameLayout.cellSize * 0.22);
+          cell.lockLabel.setFontSize('22px');
+          cell.lockLabel.setColor('#FF8A3D');
+        }
       }
     }
   }

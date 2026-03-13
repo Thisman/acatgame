@@ -32,3 +32,7 @@ export function previewCellEffectsForPlacement(cellEffects?: Array<BoardCellEffe
 export function getPlacementLockEffect(effects?: BoardCellEffect[] | null) {
   return (effects ?? []).find((effect) => effect.type === 'placementLock' && effect.remainingTurns > 0) ?? null;
 }
+
+export function getArmedMineEffect(effects?: BoardCellEffect[] | null) {
+  return (effects ?? []).find((effect) => effect.type === 'armedMine' && effect.remainingTurns > 0) ?? null;
+}

@@ -47,6 +47,8 @@ export interface RenderCatCardOptions {
 const CAT_CARD_SIZE = 98;
 const CAT_CARD_RADIUS = 14;
 const CAT_CARD_FILL_TEXTURE_KEY = 'cat-card-fill';
+const CAT_CARD_BASE_DEPTH = 10;
+const CAT_CARD_TOOLTIP_DEPTH = 3000;
 const CAT_CARD_BORDER_TEXTURE_KEYS = {
   normal: 'cat-card-border-2',
   hover: 'cat-card-border-3',
@@ -113,6 +115,7 @@ export function createCatCardView(options: CreateCatCardOptions): CatCardView {
   const container = options.scene.add.container(0, 0, [shadow, face, border, sprite, label, tooltip, hitArea]);
   container.setVisible(false);
   container.setSize(CAT_CARD_SIZE, CAT_CARD_SIZE);
+  container.setDepth(CAT_CARD_BASE_DEPTH);
 
   const interactive = options.interactive ?? Boolean(options.onPress || options.onHover || options.onOut);
   const card: CatCardView = {
@@ -290,4 +293,5 @@ function updateTooltip(
 
 function updateTooltipVisibility(card: CatCardView, visible: boolean) {
   card.tooltip.setVisible(visible);
+  card.container.setDepth(visible ? CAT_CARD_TOOLTIP_DEPTH : CAT_CARD_BASE_DEPTH);
 }

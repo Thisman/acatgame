@@ -87,10 +87,13 @@ test('placeCat fills a cell and refills the same hand slot', () => {
 
 test('blocker card metadata is exposed through the catalog', () => {
   const blockerCard = getCardDefinition(0);
-  const normalCard = getCardDefinition(3);
+  const mineCard = getCardDefinition(6);
+  const normalCard = getCardDefinition(9);
 
   assert.equal(blockerCard.visual.animation, 'blocker');
   assert.equal(blockerCard.mechanics[0]?.type, 'placementLockAura');
+  assert.equal(mineCard.visual.animation, 'mine');
+  assert.equal(mineCard.mechanics[0]?.type, 'delayedExplosion');
   assert.equal(normalCard.visual.animation, 'default');
   assert.equal(normalCard.mechanics.length, 0);
 });
@@ -277,6 +280,117 @@ test('reapplying a placement lock replaces the previous lock on the same cell', 
       sourceBoardIndex: 32,
     },
   ]);
+});
+
+test('placing a mine card arms it for two turns on its own cell', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [6, 1, 2, 3, 4];
+  state.players['0'].deck = [5, 7, 8, 9, 10];
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 1 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+  );
+
+  assert.deepEqual(state.cellEffects[24], [
+    {
+      type: 'armedMine',
+      remainingTurns: 2,
+      sourcePlayerID: '0',
+      sourceCardID: 6,
+      sourceBoardIndex: 24,
+      radius: 1,
+      includeDiagonals: true,
+      clearSelf: true,
+    },
+  ]);
+});
+
+test('a mine explodes after two following turns and clears the full 3x3 area', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [6, 1, 2, 3, 4];
+  state.players['0'].deck = [5, 7, 8, 9, 10];
+  state.players['1'].hand = [9, 10, 11, 12, 13];
+  state.players['1'].deck = [14];
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 1 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+  );
+
+  state.board[16] = { playerID: '1', cardID: 20, move: 0 };
+  state.board[17] = { playerID: '0', cardID: 21, move: 0 };
+  state.board[18] = { playerID: '1', cardID: 22, move: 0 };
+  state.board[23] = { playerID: '0', cardID: 23, move: 0 };
+  state.board[25] = { playerID: '1', cardID: 12, move: 0 };
+  state.board[30] = { playerID: '0', cardID: 13, move: 0 };
+  state.board[31] = { playerID: '1', cardID: 14, move: 0 };
+  state.board[32] = { playerID: '0', cardID: 15, move: 0 };
+  state.board[0] = { playerID: '1', cardID: 16, move: 0 };
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '1', turn: 2 },
+      playerID: '1',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    0,
+    1,
+    0,
+  );
+
+  assert.equal(state.cellEffects[24][0]?.type, 'armedMine');
+  assert.equal(state.cellEffects[24][0]?.remainingTurns, 1);
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 3 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    2,
+    2,
+    1,
+  );
+
+  for (const index of [16, 17, 18, 23, 24, 25, 30, 31, 32]) {
+    assert.equal(state.board[index], null);
+  }
+
+  assert.equal(state.board[0]?.playerID, '1');
+  assert.equal(state.cellEffects[24].length, 0);
 });
 
 test('winning a round stores the result and waits for the next round reset', () => {

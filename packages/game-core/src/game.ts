@@ -9,7 +9,7 @@ import {
   CLICK_RACE_NUM_PLAYERS,
   READY_CARD_SELECTION_LIMIT,
 } from './constants.js';
-import { getCardDefinition, type BoardCellEffect } from './cards.js';
+import { getCardDefinition, type ArmedMineEffect, type BoardCellEffect } from './cards.js';
 import type {
   BoardCell,
   ClickRaceClientState,
@@ -57,6 +57,7 @@ const cloneMatchResult = (result: MatchResult | null): MatchResult | null =>
 const cloneCellEffect = (effect: BoardCellEffect): BoardCellEffect => {
   switch (effect.type) {
     case 'placementLock':
+    case 'armedMine':
       return {
         ...effect,
       };
@@ -77,27 +78,89 @@ const normalizeCellEffects = (cellEffects?: Array<BoardCellEffect[]> | null) => 
   return normalized;
 };
 
-const decrementCellEffects = (cellEffects?: Array<BoardCellEffect[]> | null) =>
-  normalizeCellEffects(cellEffects).map((effects) =>
-    effects.flatMap((effect) => {
+const resolveMineExplosions = (
+  G: ClickRaceState,
+  cellEffects: Array<BoardCellEffect[]>,
+  explodedMines: ArmedMineEffect[],
+) => {
+  for (const effect of explodedMines) {
+    if (effect.type !== 'armedMine') {
+      continue;
+    }
+
+    const centerX = effect.sourceBoardIndex % CAT_MATCH_BOARD_SIZE;
+    const centerY = Math.floor(effect.sourceBoardIndex / CAT_MATCH_BOARD_SIZE);
+
+    for (let deltaY = -effect.radius; deltaY <= effect.radius; deltaY += 1) {
+      for (let deltaX = -effect.radius; deltaX <= effect.radius; deltaX += 1) {
+        const isSelf = deltaX === 0 && deltaY === 0;
+
+        if (isSelf && !effect.clearSelf) {
+          continue;
+        }
+
+        if (!isSelf && !effect.includeDiagonals && Math.abs(deltaX) + Math.abs(deltaY) !== 1) {
+          continue;
+        }
+
+        const targetX = centerX + deltaX;
+        const targetY = centerY + deltaY;
+
+        if (
+          targetX < 0 ||
+          targetX >= CAT_MATCH_BOARD_SIZE ||
+          targetY < 0 ||
+          targetY >= CAT_MATCH_BOARD_SIZE
+        ) {
+          continue;
+        }
+
+        const targetIndex = targetY * CAT_MATCH_BOARD_SIZE + targetX;
+        G.board[targetIndex] = null;
+        cellEffects[targetIndex] = cellEffects[targetIndex].filter((cellEffect) => cellEffect.type !== 'armedMine');
+      }
+    }
+  }
+};
+
+const advanceCellEffects = (G: ClickRaceState): Array<BoardCellEffect[]> => {
+  const explodedMines: ArmedMineEffect[] = [];
+  const nextCellEffects = normalizeCellEffects(G.cellEffects).map((effects): BoardCellEffect[] =>
+    effects.reduce<BoardCellEffect[]>((nextEffects, effect) => {
       switch (effect.type) {
         case 'placementLock': {
           const remainingTurns = effect.remainingTurns - 1;
 
-          if (remainingTurns <= 0) {
-            return [];
-          }
-
-          return [
-            {
+          if (remainingTurns > 0) {
+            nextEffects.push({
               ...effect,
               remainingTurns,
-            },
-          ];
+            });
+          }
+
+          return nextEffects;
+        }
+        case 'armedMine': {
+          const remainingTurns = effect.remainingTurns - 1;
+
+          if (remainingTurns <= 0) {
+            explodedMines.push(effect);
+            return nextEffects;
+          }
+
+          nextEffects.push({
+            ...effect,
+            remainingTurns,
+          });
+          return nextEffects;
         }
       }
-    }),
+    }, []),
   );
+
+  resolveMineExplosions(G, nextCellEffects, explodedMines);
+  return nextCellEffects;
+};
 
 const hasPlacementLock = (effects: BoardCellEffect[]) =>
   effects.some((effect) => effect.type === 'placementLock' && effect.remainingTurns > 0);
@@ -159,6 +222,22 @@ const applyOnPlaceMechanics = (
             ];
           }
         }
+        break;
+      }
+      case 'delayedExplosion': {
+        G.cellEffects[boardIndex] = [
+          ...G.cellEffects[boardIndex].filter((effect) => effect.type !== 'armedMine'),
+          {
+            type: 'armedMine',
+            remainingTurns: mechanic.delayTurns,
+            sourcePlayerID: playerID,
+            sourceCardID: cardID,
+            sourceBoardIndex: boardIndex,
+            radius: mechanic.radius,
+            includeDiagonals: mechanic.includeDiagonals,
+            clearSelf: mechanic.clearSelf,
+          },
+        ];
         break;
       }
     }
@@ -426,8 +505,12 @@ const placeCatMove: MoveFn<ClickRaceState> = ({ G, ctx, events, random, playerID
 
   playerState.hand[handIndex] = playerState.deck.shift() ?? null;
   playerState.placedCount += 1;
-  G.cellEffects = decrementCellEffects(G.cellEffects);
-  applyOnPlaceMechanics(G, boardIndex, cellX, cellY, playerID, cardID);
+  G.cellEffects = advanceCellEffects(G);
+
+  if (G.board[boardIndex]?.playerID === playerID && G.board[boardIndex]?.cardID === cardID) {
+    applyOnPlaceMechanics(G, boardIndex, cellX, cellY, playerID, cardID);
+  }
+
   refreshPlayerSummaries(G);
 
   const roundWon = hasWinningLine(G.board, cellX, cellY, playerID);
