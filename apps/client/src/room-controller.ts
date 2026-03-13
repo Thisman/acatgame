@@ -160,14 +160,14 @@ export class RoomController {
     this.emit();
   }
 
-  async placeCat(cellX: number, cellY: number, handIndex: number) {
+  async placeCat(cellX: number, cellY: number, handIndex: number, targetX?: number, targetY?: number) {
     this.error = null;
 
     if (!this.bgioClient) {
       return;
     }
 
-    this.bgioClient.moves.placeCat(cellX, cellY, handIndex);
+    this.bgioClient.moves.placeCat(cellX, cellY, handIndex, targetX, targetY);
   }
 
   reset() {

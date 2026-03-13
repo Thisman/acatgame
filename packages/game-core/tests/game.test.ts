@@ -24,11 +24,13 @@ const placeCat = ClickRaceGame.moves?.placeCat as (
     ctx: { currentPlayer: string; turn: number };
     playerID: string;
     events: { endTurn: (arg: { next: string }) => void };
-    random: typeof orderedShuffle;
+      random: typeof orderedShuffle;
   },
   cellX: number,
   cellY: number,
   handIndex: number,
+  targetX?: number,
+  targetY?: number,
 ) => void | 'INVALID_MOVE';
 
 test('createGameplayState creates a round with 5 cards in hand and 10 in deck', () => {
@@ -87,15 +89,163 @@ test('placeCat fills a cell and refills the same hand slot', () => {
 
 test('blocker card metadata is exposed through the catalog', () => {
   const blockerCard = getCardDefinition(0);
+  const convertCard = getCardDefinition(3);
   const mineCard = getCardDefinition(6);
   const normalCard = getCardDefinition(9);
 
   assert.equal(blockerCard.visual.animation, 'blocker');
   assert.equal(blockerCard.mechanics[0]?.type, 'placementLockAura');
+  assert.equal(convertCard.visual.animation, 'convert');
+  assert.equal(convertCard.mechanics[0]?.type, 'adjacentConvert');
   assert.equal(mineCard.visual.animation, 'mine');
   assert.equal(mineCard.mechanics[0]?.type, 'delayedExplosion');
   assert.equal(normalCard.visual.animation, 'default');
   assert.equal(normalCard.mechanics.length, 0);
+});
+
+test('a convert cat cannot be placed without an adjacent enemy cat', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+
+  const result = placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 1 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    3,
+    3,
+    2,
+  );
+
+  assert.equal(result, 'INVALID_MOVE');
+  assert.equal(state.board[24], null);
+});
+
+test('a convert cat must target exactly one adjacent enemy cat', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.board[17] = { playerID: '1', cardID: 9, move: 1 };
+
+  const missingTargetResult = placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 2 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    3,
+  );
+
+  assert.equal(missingTargetResult, 'INVALID_MOVE');
+
+  const wrongTargetResult = placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 2 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    3,
+    0,
+    0,
+  );
+
+  assert.equal(wrongTargetResult, 'INVALID_MOVE');
+});
+
+test('a convert cat flips one adjacent enemy cat to the placed cat team', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.board[17] = { playerID: '1', cardID: 9, move: 1 };
+  let nextPlayer = '';
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 2 },
+      playerID: '0',
+      events: {
+        endTurn(arg) {
+          nextPlayer = arg.next;
+        },
+      },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    3,
+    3,
+    2,
+  );
+
+  assert.deepEqual(state.board[24], {
+    playerID: '0',
+    cardID: 3,
+    move: 2,
+  });
+  assert.deepEqual(state.board[17], {
+    playerID: '0',
+    cardID: 9,
+    move: 2,
+  });
+  assert.equal(nextPlayer, '1');
+});
+
+test('a converted adjacent cat can complete a winning line', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.board[0] = { playerID: '0', cardID: 11, move: 1 };
+  state.board[1] = { playerID: '0', cardID: 12, move: 2 };
+  state.board[2] = { playerID: '1', cardID: 13, move: 3 };
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 4 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    1,
+    3,
+    2,
+    0,
+  );
+
+  assert.deepEqual(state.roundResult, { round: 1, winner: '0', draw: false });
+  assert.equal(state.roundWinsByPlayer['0'], 1);
 });
 
 test('placing a blocker card locks all adjacent empty cells for two turns', () => {

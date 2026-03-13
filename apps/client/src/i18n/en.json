@@ -35,6 +35,10 @@
       "name": "Blocker Cat",
       "description": "After placement, blocks all 8 adjacent empty cells for 2 turns."
     },
+    "convert": {
+      "name": "Convert Cat",
+      "description": "Can only be placed next to an enemy cat and flips one adjacent enemy cat to your color after placement."
+    },
     "mine": {
       "name": "Mine Cat",
       "description": "Explodes after 2 turns and clears all 8 adjacent cells along with its own."

@@ -9,7 +9,12 @@ import {
   CLICK_RACE_NUM_PLAYERS,
   READY_CARD_SELECTION_LIMIT,
 } from './constants.js';
-import { getCardDefinition, type ArmedMineEffect, type BoardCellEffect } from './cards.js';
+import {
+  getAdjacentConvertMechanic,
+  getCardDefinition,
+  type ArmedMineEffect,
+  type BoardCellEffect,
+} from './cards.js';
 import type {
   BoardCell,
   ClickRaceClientState,
@@ -165,6 +170,56 @@ const advanceCellEffects = (G: ClickRaceState): Array<BoardCellEffect[]> => {
 const hasPlacementLock = (effects: BoardCellEffect[]) =>
   effects.some((effect) => effect.type === 'placementLock' && effect.remainingTurns > 0);
 
+const getNeighborBoardIndexes = (
+  cellX: number,
+  cellY: number,
+  radius: number,
+  includeDiagonals: boolean,
+) => {
+  const boardIndexes: number[] = [];
+
+  for (let deltaY = -radius; deltaY <= radius; deltaY += 1) {
+    for (let deltaX = -radius; deltaX <= radius; deltaX += 1) {
+      if (deltaX === 0 && deltaY === 0) {
+        continue;
+      }
+
+      if (!includeDiagonals && Math.abs(deltaX) + Math.abs(deltaY) !== 1) {
+        continue;
+      }
+
+      const targetX = cellX + deltaX;
+      const targetY = cellY + deltaY;
+
+      if (
+        targetX < 0 ||
+        targetX >= CAT_MATCH_BOARD_SIZE ||
+        targetY < 0 ||
+        targetY >= CAT_MATCH_BOARD_SIZE
+      ) {
+        continue;
+      }
+
+      boardIndexes.push(targetY * CAT_MATCH_BOARD_SIZE + targetX);
+    }
+  }
+
+  return boardIndexes;
+};
+
+const getAdjacentEnemyBoardIndexes = (
+  board: Array<BoardCell | null>,
+  cellX: number,
+  cellY: number,
+  playerID: string,
+  radius: number,
+  includeDiagonals: boolean,
+) =>
+  getNeighborBoardIndexes(cellX, cellY, radius, includeDiagonals).filter((boardIndex) => {
+    const cell = board[boardIndex];
+    return Boolean(cell && cell.playerID !== playerID);
+  });
+
 const applyOnPlaceMechanics = (
   G: ClickRaceState,
   boardIndex: number,
@@ -172,6 +227,8 @@ const applyOnPlaceMechanics = (
   cellY: number,
   playerID: string,
   cardID: number,
+  move: number,
+  selectedTargetBoardIndex: number | null,
 ) => {
   const cardDefinition = getCardDefinition(cardID);
 
@@ -238,6 +295,24 @@ const applyOnPlaceMechanics = (
             clearSelf: mechanic.clearSelf,
           },
         ];
+        break;
+      }
+      case 'adjacentConvert': {
+        if (selectedTargetBoardIndex === null) {
+          break;
+        }
+
+        const targetCell = G.board[selectedTargetBoardIndex];
+
+        if (!targetCell || targetCell.playerID === playerID) {
+          break;
+        }
+
+        G.board[selectedTargetBoardIndex] = {
+          ...targetCell,
+          playerID,
+          move,
+        };
         break;
       }
     }
@@ -456,7 +531,14 @@ export const createNextRoundState = (
   };
 };
 
-const placeCatMove: MoveFn<ClickRaceState> = ({ G, ctx, events, random, playerID }, cellX: number, cellY: number, handIndex: number) => {
+const placeCatMove: MoveFn<ClickRaceState> = (
+  { G, ctx, events, random, playerID },
+  cellX: number,
+  cellY: number,
+  handIndex: number,
+  targetX?: number,
+  targetY?: number,
+) => {
   if (!playerID || G.matchResult) {
     return INVALID_MOVE;
   }
@@ -497,6 +579,48 @@ const placeCatMove: MoveFn<ClickRaceState> = ({ G, ctx, events, random, playerID
     return INVALID_MOVE;
   }
 
+  const convertMechanic = getAdjacentConvertMechanic(cardID);
+  let selectedTargetBoardIndex: number | null = null;
+  let selectedTargetX: number | null = null;
+  let selectedTargetY: number | null = null;
+
+  if (convertMechanic) {
+    const adjacentEnemyBoardIndexes = getAdjacentEnemyBoardIndexes(
+      G.board,
+      cellX,
+      cellY,
+      playerID,
+      convertMechanic.radius,
+      convertMechanic.includeDiagonals,
+    );
+
+    if (adjacentEnemyBoardIndexes.length === 0) {
+      return INVALID_MOVE;
+    }
+
+    const normalizedTargetX = typeof targetX === 'number' ? targetX : Number.NaN;
+    const normalizedTargetY = typeof targetY === 'number' ? targetY : Number.NaN;
+
+    if (
+      !Number.isInteger(normalizedTargetX) ||
+      !Number.isInteger(normalizedTargetY) ||
+      normalizedTargetX < 0 ||
+      normalizedTargetX >= CAT_MATCH_BOARD_SIZE ||
+      normalizedTargetY < 0 ||
+      normalizedTargetY >= CAT_MATCH_BOARD_SIZE
+    ) {
+      return INVALID_MOVE;
+    }
+
+    selectedTargetX = normalizedTargetX;
+    selectedTargetY = normalizedTargetY;
+    selectedTargetBoardIndex = selectedTargetY * CAT_MATCH_BOARD_SIZE + selectedTargetX;
+
+    if (!adjacentEnemyBoardIndexes.includes(selectedTargetBoardIndex)) {
+      return INVALID_MOVE;
+    }
+  }
+
   G.board[boardIndex] = {
     playerID,
     cardID,
@@ -508,12 +632,18 @@ const placeCatMove: MoveFn<ClickRaceState> = ({ G, ctx, events, random, playerID
   G.cellEffects = advanceCellEffects(G);
 
   if (G.board[boardIndex]?.playerID === playerID && G.board[boardIndex]?.cardID === cardID) {
-    applyOnPlaceMechanics(G, boardIndex, cellX, cellY, playerID, cardID);
+    applyOnPlaceMechanics(G, boardIndex, cellX, cellY, playerID, cardID, ctx.turn, selectedTargetBoardIndex);
   }
 
   refreshPlayerSummaries(G);
 
-  const roundWon = hasWinningLine(G.board, cellX, cellY, playerID);
+  const convertedCellWon =
+    selectedTargetBoardIndex !== null &&
+    selectedTargetX !== null &&
+    selectedTargetY !== null &&
+    G.board[selectedTargetBoardIndex]?.playerID === playerID &&
+    hasWinningLine(G.board, selectedTargetX, selectedTargetY, playerID);
+  const roundWon = hasWinningLine(G.board, cellX, cellY, playerID) || convertedCellWon;
   const roundDraw = !roundWon && isRoundDraw(G);
 
   if (!roundWon && !roundDraw) {
