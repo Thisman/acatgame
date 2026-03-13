@@ -390,8 +390,6 @@ export class GamePhaseView {
       );
 
       if (boardIndex === pendingPlacementIndex) {
-        this.pendingTargetedPlacement = null;
-        this.rerender();
         return;
       }
 
@@ -523,6 +521,7 @@ export class GamePhaseView {
       const hovered = this.hoveredCellKey === `${cell.x}:${cell.y}`;
       const pendingPlacement =
         this.pendingTargetedPlacement?.cellX === cell.x && this.pendingTargetedPlacement?.cellY === cell.y;
+      const pendingPlacedCardID = pendingPlacement ? this.pendingTargetedPlacement?.cardID ?? null : null;
       const targetedCell = pendingTargetBoardIndexes.has(boardIndex);
       const targetedPlacementOptions =
         canPlay && targetingMode && !boardCell && !blocked
@@ -539,8 +538,6 @@ export class GamePhaseView {
         : canPlay && !boardCell && !blocked && this.selectedHandIndex !== null;
       const fillColor = blocked
         ? 0xf8d8ac
-        : pendingPlacement
-          ? 0xd8f0e4
         : targetedPlacementCandidate
           ? 0xe6f6ef
         : hovered && selectable
@@ -551,26 +548,32 @@ export class GamePhaseView {
       cell.tile.setPosition(centerX, centerY);
       cell.tile.setSize(gameLayout.cellSize - inset, gameLayout.cellSize - inset);
       cell.tile.setFillStyle(fillColor, 1);
-      if (boardCell) {
+      if (boardCell || pendingPlacedCardID !== null) {
         cell.tile.setStrokeStyle();
-      } else {
-        cell.tile.setStrokeStyle(
-          pendingPlacement ? 4 : blocked || targetedPlacementCandidate || (hovered && selectable) ? 3 : 2,
-          pendingPlacement
-            ? 0x5f978c
-            : blocked
-              ? UI_THEME.accentBorderNumber
-              : targetedPlacementCandidate
-                ? 0x5f978c
-                : UI_THEME.surfaceStrongNumber,
+        } else {
+          cell.tile.setStrokeStyle(
+          blocked || targetedPlacementCandidate || (hovered && selectable) ? 3 : 2,
+          blocked
+            ? UI_THEME.accentBorderNumber
+            : targetedPlacementCandidate
+              ? 0x5f978c
+              : UI_THEME.surfaceStrongNumber,
           1,
         );
       }
 
-      if (boardCell) {
-        const textureKey = getPlayerCatBaseTexture(this.scene, boardCell.playerID);
-        const animationKey = getCardAnimationKey(this.scene, boardCell.playerID, boardCell.cardID);
-        const tooltipContent = getCardTooltipContent(boardCell.cardID);
+      if (boardCell || pendingPlacedCardID !== null) {
+        const renderedPlayerID = boardCell?.playerID ?? sessionPlayerID;
+        const renderedCardID = boardCell?.cardID ?? pendingPlacedCardID;
+
+        if (renderedCardID === null) {
+          cell.card.container.setVisible(false);
+          continue;
+        }
+
+        const textureKey = getPlayerCatBaseTexture(this.scene, renderedPlayerID);
+        const animationKey = getCardAnimationKey(this.scene, renderedPlayerID, renderedCardID);
+        const tooltipContent = getCardTooltipContent(renderedCardID);
         if (cell.card.sprite.texture.key !== textureKey) {
           cell.card.sprite.setTexture(textureKey);
         }
@@ -586,6 +589,7 @@ export class GamePhaseView {
           spriteScale: Math.min((gameLayout.cellSize - 36) / 64, 1),
           hovered,
           selected: false,
+          disabled: false,
           faceTint: targetedCell ? 0xffd4bf : undefined,
           tooltipTitle: tooltipContent.title,
           tooltipText: tooltipContent.text,
