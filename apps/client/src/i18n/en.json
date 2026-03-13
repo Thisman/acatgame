@@ -37,6 +37,7 @@
     "roundDraw": "Round {round}: draw",
     "matchWinner": "{player} wins the match",
     "matchDraw": "The match ends in a draw",
+    "waitingForOpponentReady": "Waiting for the other player to press Ready...",
     "roundScore": "Round {round}/{maxRounds} | Wins: {left} - {right} | Draws: {draws}",
     "currentTurnRoundScore": "Round {round}/{maxRounds} | Turn: {player} | Wins: {left} - {right} | Draws: {draws}",
     "finalRoundScore": "Final rounds score: {left} - {right} | Draws: {draws}"

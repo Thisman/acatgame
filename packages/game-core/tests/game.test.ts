@@ -6,7 +6,7 @@ import {
   CAT_MATCH_MAX_ROUNDS,
   READY_CARD_SELECTION_LIMIT,
 } from '../src/constants.js';
-import { ClickRaceGame, createGameplayState } from '../src/game.js';
+import { ClickRaceGame, createGameplayState, createNextRoundState, getRoundStarter } from '../src/game.js';
 import type { ClickRaceState } from '../src/types.js';
 
 const selection = Array.from({ length: READY_CARD_SELECTION_LIMIT }, (_value, index) => index);
@@ -83,7 +83,7 @@ test('placeCat fills a cell and refills the same hand slot', () => {
   assert.equal(nextPlayer, '1');
 });
 
-test('winning a round clears the board and starts the next round with the other starter', () => {
+test('winning a round stores the result and waits for the next round reset', () => {
   const state = createGameplayState(
     {
       '0': selection,
@@ -115,10 +115,10 @@ test('winning a round clears the board and starts the next round with the other 
 
   assert.equal(state.roundWinsByPlayer['0'], 1);
   assert.deepEqual(state.roundResult, { round: 1, winner: '0', draw: false });
-  assert.equal(state.currentRound, 2);
-  assert.equal(state.board.every((cell) => cell === null), true);
-  assert.equal(nextPlayer, '1');
-  assert.deepEqual(state.players['0'].hand, [0, 1, 2, 3, 4]);
+  assert.equal(state.currentRound, 1);
+  assert.deepEqual(state.board[3], { playerID: '0', cardID: 0, move: 4 });
+  assert.deepEqual(state.board[0], { playerID: '0', cardID: 8, move: 1 });
+  assert.equal(nextPlayer, '');
 });
 
 test('vertical and diagonal wins are detected', () => {
@@ -217,8 +217,8 @@ test('a round is a draw when the last remaining card is placed without a line', 
 
   assert.deepEqual(state.roundResult, { round: 1, winner: null, draw: true });
   assert.equal(state.drawRounds, 1);
-  assert.equal(state.currentRound, 2);
-  assert.equal(nextPlayer, '1');
+  assert.equal(state.currentRound, 1);
+  assert.equal(nextPlayer, '');
 });
 
 test('the third round can end the whole match in a draw', () => {
@@ -254,4 +254,29 @@ test('the third round can end the whole match in a draw', () => {
   );
 
   assert.deepEqual(state.matchResult, { winner: null, draw: true });
+});
+
+test('createNextRoundState clears the board and deals fresh hands for the next round', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+
+  state.board[0] = { playerID: '0', cardID: 9, move: 1 };
+  state.roundWinsByPlayer['0'] = 1;
+  state.drawRounds = 1;
+  state.roundResult = { round: 1, winner: '0', draw: false };
+
+  const nextState = createNextRoundState(state, orderedShuffle);
+
+  assert.equal(nextState.currentRound, 2);
+  assert.equal(nextState.board.every((cell) => cell === null), true);
+  assert.equal(nextState.roundResult, null);
+  assert.equal(nextState.roundWinsByPlayer['0'], 1);
+  assert.equal(nextState.drawRounds, 1);
+  assert.deepEqual(nextState.players['0'].hand, [0, 1, 2, 3, 4]);
+  assert.equal(getRoundStarter(nextState.currentRound), '1');
 });

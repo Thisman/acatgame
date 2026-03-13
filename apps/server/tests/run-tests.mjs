@@ -160,6 +160,8 @@ gameRegistry.storeSession({
   credentials: 'secret-1',
   seat: 1,
 });
+gameRegistry.setSelectedCardIDs('match-4', '0', fullSelection);
+gameRegistry.setSelectedCardIDs('match-4', '1', fullSelection);
 gameRegistry.setGameStarted('match-4', true);
 
 const gameState = createGameplayState(
@@ -174,28 +176,56 @@ const gameState = createGameplayState(
   },
 );
 gameState.roundResult = { round: 1, winner: '0', draw: false };
-gameState.currentRound = 2;
+gameState.currentRound = 1;
+
+const roundStorage = {
+  state: {
+    G: gameState,
+    ctx: {
+      currentPlayer: '1',
+    },
+    _stateID: 5,
+  },
+};
 
 const gameRoomService = new RoomService('http://localhost:8000', gameRegistry, {
-  fetch: async () => ({
-    state: {
-      G: gameState,
-      ctx: {
-        currentPlayer: '1',
-      },
-    },
-  }),
+  fetch: async () => roundStorage,
+  setState: async (_matchID, state) => {
+    roundStorage.state = state;
+  },
 });
 
 gameRoomService.lobbyClient = roomService.lobbyClient;
 
 const activeSnapshot = await gameRoomService.getRoomSnapshot('match-4');
-assert.equal(activeSnapshot.phase, 'game');
-assert.equal(activeSnapshot.round, 2);
+assert.equal(activeSnapshot.phase, 'roundover');
+assert.equal(activeSnapshot.round, 1);
 assert.deepEqual(activeSnapshot.roundResult, { round: 1, winner: '0', draw: false });
 assert.equal(activeSnapshot.matchResult, null);
+assert.equal(activeSnapshot.readyByPlayer['0'], false);
+assert.equal(activeSnapshot.readyByPlayer['1'], false);
 
-gameState.matchResult = { winner: null, draw: true };
+const roundReadySnapshot = await gameRoomService.setReady('match-4', {
+  playerID: '0',
+  credentials: 'secret-0',
+  ready: true,
+});
+assert.equal(roundReadySnapshot.phase, 'roundover');
+assert.equal(roundReadySnapshot.readyByPlayer['0'], true);
+assert.equal(roundReadySnapshot.readyByPlayer['1'], false);
+
+const resumedSnapshot = await gameRoomService.setReady('match-4', {
+  playerID: '1',
+  credentials: 'secret-1',
+  ready: true,
+});
+assert.equal(resumedSnapshot.phase, 'game');
+assert.equal(resumedSnapshot.round, 2);
+assert.equal(resumedSnapshot.board.every((cell) => cell === null), true);
+assert.equal(resumedSnapshot.readyByPlayer['0'], false);
+assert.equal(resumedSnapshot.readyByPlayer['1'], false);
+
+roundStorage.state.G.matchResult = { winner: null, draw: true };
 const finalSnapshot = await gameRoomService.getRoomSnapshot('match-4');
 assert.equal(finalSnapshot.phase, 'gameover');
 assert.deepEqual(finalSnapshot.matchResult, { winner: null, draw: true });

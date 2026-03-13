@@ -18,6 +18,8 @@ import {
   type SeatState,
   type UpdateSelectionRequest,
   createGameplayState,
+  createNextRoundState,
+  getRoundStarter,
 } from '@acatgame/game-core';
 import type { LobbyClient as LobbyClientType } from 'boardgame.io/client';
 
@@ -191,9 +193,15 @@ export class RoomService {
       occupiedPlayerIDs.length === nextSnapshot.requiredPlayers &&
       occupiedPlayerIDs.every((playerID) => nextSnapshot.readyByPlayer[playerID]);
 
-    if (everyoneReady && !this.registry.hasGameStarted(matchID)) {
-      await this.resetGameplayState(matchID);
+    if (everyoneReady) {
+      if (snapshot.phase === 'roundover') {
+        await this.advanceToNextRound(matchID);
+      } else if (!this.registry.hasGameStarted(matchID)) {
+        await this.resetGameplayState(matchID);
+      }
+
       this.registry.setGameStarted(matchID, true);
+      this.registry.resetReady(matchID);
     }
 
     return this.getRoomSnapshot(matchID);
@@ -208,7 +216,7 @@ export class RoomService {
       throw new HttpError(409, ERROR_CODES.ROOM_WAITING_FOR_PLAYERS, 'Room is still waiting for players.');
     }
 
-    if (snapshot.phase === 'game' || snapshot.phase === 'gameover') {
+    if (snapshot.phase === 'game' || snapshot.phase === 'gameover' || snapshot.phase === 'roundover') {
       throw new HttpError(409, ERROR_CODES.READY_CHANGE_FORBIDDEN, 'Selection cannot be changed now.');
     }
 
@@ -245,22 +253,29 @@ export class RoomService {
     const seats = this.buildSeatStates(matchID, metadata);
     const allOccupied = seats.every((seat) => seat.occupied);
     const allConnected = seats.every((seat) => !seat.occupied || seat.connected);
-    const gameStarted = this.registry.hasGameStarted(matchID);
+    let gameStarted = this.registry.hasGameStarted(matchID);
+
+    if (roundResult && !matchResult && gameStarted) {
+      this.registry.resetReady(matchID);
+      this.registry.setGameStarted(matchID, false);
+      gameStarted = false;
+    }
 
     if (!gameStarted && (!allOccupied || !allConnected)) {
       this.registry.resetReady(matchID);
     }
 
     const phase = this.resolvePhase({
-      matchID,
       allOccupied,
       allConnected,
+      gameStarted,
+      roundResult,
       matchResult,
     });
 
     return {
       matchID,
-      status: phase === 'game' ? 'active' : phase === 'gameover' ? 'gameover' : 'waiting',
+      status: phase === 'game' || phase === 'roundover' ? 'active' : phase === 'gameover' ? 'gameover' : 'waiting',
       phase,
       seats,
       currentPlayer: storedState?.ctx?.currentPlayer ?? null,
@@ -339,6 +354,36 @@ export class RoomService {
         currentPlayer: '0',
         gameover: undefined,
       },
+      _stateID: (record.state?._stateID ?? initialState._stateID ?? 0) + 1,
+      _undo: [],
+      _redo: [],
+    });
+  }
+
+  private async advanceToNextRound(matchID: string): Promise<void> {
+    const storage = this.db as {
+      fetch?: (id: string, options: Record<string, boolean>) => Promise<StorageRecord>;
+      setState?: (id: string, state: StoredMatchState, deltalog?: unknown) => Promise<void>;
+    };
+    const record = await storage.fetch?.(matchID, { state: true, metadata: true });
+
+    if (!record?.state?.G || !storage.setState) {
+      return;
+    }
+
+    const nextState = createNextRoundState(record.state.G);
+
+    await storage.setState(matchID, {
+      ...record.state,
+      G: nextState,
+      ctx: {
+        ...record.state.ctx,
+        currentPlayer: getRoundStarter(nextState.currentRound),
+        gameover: undefined,
+      },
+      _stateID: (record.state._stateID ?? 0) + 1,
+      _undo: [],
+      _redo: [],
     });
   }
 
@@ -400,26 +445,32 @@ export class RoomService {
   }
 
   private resolvePhase({
-    matchID,
     allOccupied,
     allConnected,
+    gameStarted,
+    roundResult,
     matchResult,
   }: {
-    matchID: string;
     allOccupied: boolean;
     allConnected: boolean;
+    gameStarted: boolean;
+    roundResult: RoundResult | null;
     matchResult: MatchResult | null;
   }): RoomPhase {
     if (matchResult) {
       return 'gameover';
     }
 
-    if (this.registry.hasGameStarted(matchID)) {
-      return 'game';
+    if (!allOccupied || !allConnected) {
+      return gameStarted ? 'game' : 'waiting';
     }
 
-    if (!allOccupied || !allConnected) {
-      return 'waiting';
+    if (roundResult) {
+      return 'roundover';
+    }
+
+    if (gameStarted) {
+      return 'game';
     }
 
     return 'ready';

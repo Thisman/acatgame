@@ -248,6 +248,10 @@ export class RoomController {
     const needsGameClient = this.snapshot.phase === 'game' || this.snapshot.phase === 'gameover';
 
     if (!needsGameClient) {
+      this.bgioClient?.stop?.();
+      this.bgioClient = null;
+      this.bgioStarted = false;
+      this.gameState = null;
       return;
     }
 

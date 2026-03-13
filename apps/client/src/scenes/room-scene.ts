@@ -41,8 +41,12 @@ export class RoomScene extends Phaser.Scene {
   private phaseLeaveButton!: ButtonComponent;
   private phaseErrorText!: TextBlockComponent<HTMLParagraphElement>;
   private resultCard!: CardComponent;
+  private resultSpinner!: SpinnerComponent;
   private resultStatusText!: TextBlockComponent<HTMLParagraphElement>;
   private resultMetaText!: TextBlockComponent<HTMLParagraphElement>;
+  private resultHintText!: TextBlockComponent<HTMLParagraphElement>;
+  private resultErrorText!: TextBlockComponent<HTMLParagraphElement>;
+  private resultActionButton!: ButtonComponent;
   private resultExitButton!: ButtonComponent;
   private unsubscribe: (() => void) | null = null;
   private unsubscribeI18n: (() => void) | null = null;
@@ -128,6 +132,10 @@ export class RoomScene extends Phaser.Scene {
     this.phaseActions.element.append(this.phaseButtonsRow.element, this.phaseErrorText.element);
 
     this.resultCard = createCard({ className: 'ui-card--result', visible: false });
+    this.resultSpinner = createSpinner({
+      className: 'ui-result-spinner',
+      visible: false,
+    });
     this.resultStatusText = createTextBlock({
       variant: 'status',
       className: 'ui-result-status',
@@ -136,15 +144,31 @@ export class RoomScene extends Phaser.Scene {
       variant: 'meta',
       className: 'ui-result-meta',
     });
+    this.resultHintText = createTextBlock({
+      variant: 'hint',
+      className: 'ui-result-hint',
+      visible: false,
+    });
+    this.resultErrorText = createTextBlock({
+      variant: 'error',
+      className: 'ui-result-error',
+      visible: false,
+    });
+    this.resultActionButton = createButton({ visible: false });
     this.resultExitButton = createButton({
       text: t('actions.leaveRoom'),
+      visible: false,
       onClick: () => {
         void this.handleLeave();
       },
     });
     this.resultCard.element.append(
+      this.resultSpinner.element,
       this.resultStatusText.element,
       this.resultMetaText.element,
+      this.resultHintText.element,
+      this.resultErrorText.element,
+      this.resultActionButton.element,
       this.resultExitButton.element,
     );
 
@@ -196,6 +220,13 @@ export class RoomScene extends Phaser.Scene {
     this.primaryButton.setOnClick(null);
     this.phasePrimaryButton.setOnClick(null);
     this.phasePrimaryButton.setDisabled(false);
+    this.resultActionButton.setOnClick(null);
+    this.resultActionButton.setVisible(false);
+    this.resultActionButton.setDisabled(false);
+    this.resultExitButton.setVisible(false);
+    this.resultSpinner.setVisible(false);
+    this.resultHintText.setVisible(false);
+    this.resultErrorText.setVisible(false);
 
     if (phase === 'waiting') {
       this.renderWaiting(snapshot, errorMessage);
@@ -204,6 +235,11 @@ export class RoomScene extends Phaser.Scene {
 
     if (phase === 'ready') {
       this.renderReady(snapshot, state, roomLayout, errorMessage);
+      return;
+    }
+
+    if (phase === 'roundover') {
+      this.renderRoundOver(snapshot, state, errorMessage);
       return;
     }
 
@@ -337,7 +373,7 @@ export class RoomScene extends Phaser.Scene {
         right: roundWins['1'] ?? 0,
         draws: snapshot.drawRounds ?? 0,
       }));
-      this.renderResultPopup(matchResult.draw ? null : matchResult.winner, roundWins, snapshot.drawRounds ?? 0);
+      this.renderMatchResultPopup(matchResult.draw ? null : matchResult.winner, roundWins, snapshot.drawRounds ?? 0);
       return;
     }
 
@@ -361,9 +397,49 @@ export class RoomScene extends Phaser.Scene {
     }));
   }
 
-  private renderResultPopup(winner: string | null, roundWins: Record<string, number>, drawRounds: number) {
+  private renderRoundOver(
+    snapshot: RoomSnapshot | null,
+    state: ReturnType<typeof roomController.getState>,
+    errorMessage: string,
+  ) {
+    if (!snapshot?.roundResult) {
+      return;
+    }
+
+    const session = state.session;
+    const isReady = !!(session && snapshot.readyByPlayer[session.playerID]);
+    const roundWins = snapshot.roundWinsByPlayer ?? { '0': 0, '1': 0 };
+
     this.resultCard.setVisible(true);
-    this.resultCard.setWidth(Math.min(420, window.innerWidth - 48));
+    this.resultCard.setWidth(Math.min(550, window.innerWidth - 48));
+    this.resultSpinner.setVisible(isReady);
+    this.resultStatusText.setText(
+      snapshot.roundResult.draw
+        ? t('game.roundDraw', { round: snapshot.roundResult.round })
+        : t('game.roundWinner', {
+            round: snapshot.roundResult.round,
+            player: getPlayerLabel(snapshot.roundResult.winner ?? '0'),
+          }),
+    );
+    this.resultMetaText.setText(t('game.finalRoundScore', {
+      left: roundWins['0'] ?? 0,
+      right: roundWins['1'] ?? 0,
+      draws: snapshot.drawRounds ?? 0,
+    }));
+    this.resultHintText.setText(isReady ? t('game.waitingForOpponentReady') : '');
+    this.resultHintText.setVisible(isReady);
+    this.resultErrorText.setText(errorMessage);
+    this.resultErrorText.setVisible(Boolean(errorMessage));
+    this.resultActionButton.setText(t('actions.ready'));
+    this.resultActionButton.setVisible(!isReady);
+    this.resultActionButton.setOnClick(() => {
+      void this.handleRoundReady();
+    });
+  }
+
+  private renderMatchResultPopup(winner: string | null, roundWins: Record<string, number>, drawRounds: number) {
+    this.resultCard.setVisible(true);
+    this.resultCard.setWidth(Math.min(550, window.innerWidth - 48));
     this.resultStatusText.setText(
       winner ? t('game.matchWinner', { player: getPlayerLabel(winner) }) : t('game.matchDraw'),
     );
@@ -372,6 +448,7 @@ export class RoomScene extends Phaser.Scene {
       right: roundWins['1'] ?? 0,
       draws: drawRounds,
     }));
+    this.resultExitButton.setVisible(true);
     this.resultExitButton.setText(t('actions.leaveRoom'));
   }
 
@@ -394,6 +471,17 @@ export class RoomScene extends Phaser.Scene {
       const session = state.session;
       const ready = !!(snapshot && session && snapshot.readyByPlayer[session.playerID]);
       await roomController.setReady(!ready);
+    } catch (error) {
+      this.localError = toUiError(error);
+    }
+
+    this.renderView();
+  }
+
+  private async handleRoundReady() {
+    try {
+      this.localError = null;
+      await roomController.setReady(true);
     } catch (error) {
       this.localError = toUiError(error);
     }

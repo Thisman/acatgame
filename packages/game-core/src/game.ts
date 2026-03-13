@@ -68,7 +68,7 @@ const shuffleCards = (
   },
 ) => (random?.Shuffle ? random.Shuffle([...values]) : fisherYatesShuffle(values));
 
-const getRoundStarter = (round: number) => (round % 2 === 1 ? '0' : '1');
+export const getRoundStarter = (round: number) => (round % 2 === 1 ? '0' : '1');
 
 const getOtherPlayer = (playerID: string) => (playerID === '0' ? '1' : '0');
 
@@ -237,21 +237,26 @@ const resolveMatchResult = (G: ClickRaceState, completedRound: number): MatchRes
   };
 };
 
-const resetRound = (
-  G: ClickRaceState,
-  nextRound: number,
+export const createNextRoundState = (
+  state: ClickRaceState,
   random?: {
     Shuffle?: <T>(items: T[]) => T[];
   },
-) => {
-  G.board = createEmptyBoard();
-  G.currentRound = nextRound;
+): ClickRaceState => {
+  const nextRound = state.currentRound + 1;
+  const players = PLAYER_IDS.reduce<Record<string, PrivatePlayerState>>((acc, playerID) => {
+    acc[playerID] = createPrivatePlayerState(state.players[playerID].selectedCardIDs, random);
+    return acc;
+  }, {});
 
-  for (const playerID of PLAYER_IDS) {
-    G.players[playerID] = createPrivatePlayerState(G.players[playerID].selectedCardIDs, random);
-  }
-
-  refreshPlayerSummaries(G);
+  return {
+    ...state,
+    board: createEmptyBoard(),
+    currentRound: nextRound,
+    roundResult: null,
+    players,
+    playerSummaries: createPlayerSummaries(players),
+  };
 };
 
 const placeCatMove: MoveFn<ClickRaceState> = ({ G, ctx, events, random, playerID }, cellX: number, cellY: number, handIndex: number) => {
@@ -335,9 +340,7 @@ const placeCatMove: MoveFn<ClickRaceState> = ({ G, ctx, events, random, playerID
     return;
   }
 
-  const nextRound = completedRound + 1;
-  resetRound(G, nextRound, random);
-  events.endTurn({ next: getRoundStarter(nextRound) });
+  return;
 };
 
 export const ClickRaceGame: Game<ClickRaceState> = {

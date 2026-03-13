@@ -1,5 +1,5 @@
 export type RoomStatus = 'waiting' | 'active' | 'gameover';
-export type RoomPhase = 'waiting' | 'ready' | 'game' | 'gameover';
+export type RoomPhase = 'waiting' | 'ready' | 'game' | 'roundover' | 'gameover';
 
 export interface BoardCell {
   playerID: string;

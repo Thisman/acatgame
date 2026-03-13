@@ -270,7 +270,16 @@ canvas {
 
 .ui-result-meta {
   color: var(--ui-text-soft);
-  max-width: 320px;
+  max-width: 100%;
+}
+
+.ui-result-spinner {
+  margin-bottom: 4px;
+}
+
+.ui-result-hint,
+.ui-result-error {
+  max-width: 100%;
 }
 
 @keyframes ui-spin {
