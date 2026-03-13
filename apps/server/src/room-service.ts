@@ -2,6 +2,8 @@ import {
   CLICK_RACE_GAME_NAME,
   CLICK_RACE_NUM_PLAYERS,
   ERROR_CODES,
+  READY_CARD_POOL_SIZE,
+  READY_CARD_SELECTION_LIMIT,
   ROOM_SEAT_LABELS,
   type ClickRaceState,
   type ErrorCode,
@@ -12,6 +14,7 @@ import {
   type RoomSession,
   type RoomSnapshot,
   type SeatState,
+  type UpdateSelectionRequest,
 } from '@acatgame/game-core';
 import type { LobbyClient as LobbyClientType } from 'boardgame.io/client';
 
@@ -167,6 +170,16 @@ export class RoomService {
       throw new HttpError(409, ERROR_CODES.READY_CHANGE_FORBIDDEN, 'Ready state cannot be changed now.');
     }
 
+    const selectedCardIDs = this.registry.getSelectedCardIDs(matchID, request.playerID);
+
+    if (request.ready && selectedCardIDs.length !== READY_CARD_SELECTION_LIMIT) {
+      throw new HttpError(
+        409,
+        ERROR_CODES.READY_SELECTION_REQUIRED,
+        `Select exactly ${READY_CARD_SELECTION_LIMIT} cards before marking ready.`,
+      );
+    }
+
     this.registry.setReady(matchID, request.playerID, request.ready);
 
     const nextSnapshot = await this.getRoomSnapshot(matchID);
@@ -179,6 +192,29 @@ export class RoomService {
       await this.resetGameplayState(matchID);
       this.registry.setGameStarted(matchID, true);
     }
+
+    return this.getRoomSnapshot(matchID);
+  }
+
+  async updateSelection(matchID: string, request: UpdateSelectionRequest): Promise<RoomSnapshot> {
+    this.assertAuthorized(matchID, request.playerID, request.credentials);
+
+    const snapshot = await this.getRoomSnapshot(matchID);
+
+    if (snapshot.phase === 'waiting') {
+      throw new HttpError(409, ERROR_CODES.ROOM_WAITING_FOR_PLAYERS, 'Room is still waiting for players.');
+    }
+
+    if (snapshot.phase === 'game' || snapshot.phase === 'gameover') {
+      throw new HttpError(409, ERROR_CODES.READY_CHANGE_FORBIDDEN, 'Selection cannot be changed now.');
+    }
+
+    if (snapshot.readyByPlayer[request.playerID]) {
+      throw new HttpError(409, ERROR_CODES.READY_CHANGE_FORBIDDEN, 'Selection cannot be changed while ready.');
+    }
+
+    const selectedCardIDs = this.validateSelection(request.selectedCardIDs);
+    this.registry.setSelectedCardIDs(matchID, request.playerID, selectedCardIDs);
 
     return this.getRoomSnapshot(matchID);
   }
@@ -220,6 +256,7 @@ export class RoomService {
       circles,
       scores,
       readyByPlayer: this.buildReadyState(matchID),
+      selectedCardIDsByPlayer: this.buildSelectedCardsState(matchID),
       requiredPlayers: CLICK_RACE_NUM_PLAYERS,
     };
   }
@@ -294,6 +331,44 @@ export class RoomService {
       acc[playerID] = this.registry.isReady(matchID, playerID);
       return acc;
     }, {});
+  }
+
+  private buildSelectedCardsState(matchID: string): Record<string, number[]> {
+    return ROOM_SEAT_LABELS.reduce<Record<string, number[]>>((acc, _label, seatIndex) => {
+      const playerID = String(seatIndex);
+      acc[playerID] = this.registry.getSelectedCardIDs(matchID, playerID);
+      return acc;
+    }, {});
+  }
+
+  private validateSelection(selectedCardIDs: number[]): number[] {
+    if (!Array.isArray(selectedCardIDs)) {
+      throw new HttpError(400, ERROR_CODES.READY_SELECTION_INVALID, 'Card selection must be an array.');
+    }
+
+    if (selectedCardIDs.length > READY_CARD_SELECTION_LIMIT) {
+      throw new HttpError(
+        400,
+        ERROR_CODES.READY_SELECTION_INVALID,
+        `You can select at most ${READY_CARD_SELECTION_LIMIT} cards.`,
+      );
+    }
+
+    const uniqueCardIDs = new Set<number>();
+
+    for (const cardID of selectedCardIDs) {
+      if (!Number.isInteger(cardID) || cardID < 0 || cardID >= READY_CARD_POOL_SIZE) {
+        throw new HttpError(400, ERROR_CODES.READY_SELECTION_INVALID, 'Selected card IDs are out of range.');
+      }
+
+      if (uniqueCardIDs.has(cardID)) {
+        throw new HttpError(400, ERROR_CODES.READY_SELECTION_INVALID, 'Selected card IDs must be unique.');
+      }
+
+      uniqueCardIDs.add(cardID);
+    }
+
+    return [...selectedCardIDs];
   }
 
   private resolvePhase({

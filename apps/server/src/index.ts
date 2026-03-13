@@ -97,6 +97,10 @@ server.router.post('/api/rooms/:matchID/ready', async (ctx) => {
   await respond(ctx, async () => roomService.setReady(ctx.params.matchID, await readBody(ctx)));
 });
 
+server.router.post('/api/rooms/:matchID/selection', async (ctx) => {
+  await respond(ctx, async () => roomService.updateSelection(ctx.params.matchID, await readBody(ctx)));
+});
+
 server.run({
   port: PORT,
   callback: () => {

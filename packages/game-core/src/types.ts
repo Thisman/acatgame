@@ -39,6 +39,7 @@ export interface RoomSnapshot {
   circles: CircleMark[];
   scores: Record<string, number>;
   readyByPlayer: Record<string, boolean>;
+  selectedCardIDsByPlayer: Record<string, number[]>;
   requiredPlayers: number;
 }
 
@@ -51,4 +52,8 @@ export interface LeaveRoomRequest extends PresencePingRequest {}
 
 export interface ReadyRoomRequest extends PresencePingRequest {
   ready: boolean;
+}
+
+export interface UpdateSelectionRequest extends PresencePingRequest {
+  selectedCardIDs: number[];
 }

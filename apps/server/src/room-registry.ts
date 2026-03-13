@@ -11,6 +11,7 @@ interface RoomRegistryEntry {
   sessions: Map<string, RoomSession>;
   presence: Map<string, PresenceEntry>;
   readyByPlayer: Map<string, boolean>;
+  selectedCardIDsByPlayer: Map<string, number[]>;
 }
 
 export class RoomRegistry {
@@ -29,6 +30,7 @@ export class RoomRegistry {
         sessions: new Map(),
         presence: new Map(),
         readyByPlayer: new Map(),
+        selectedCardIDsByPlayer: new Map(),
       };
       this.rooms.set(matchID, entry);
     }
@@ -42,6 +44,7 @@ export class RoomRegistry {
     room.sessions.set(session.playerID, session);
     room.presence.set(session.playerID, { lastSeenAt: Date.now() });
     room.readyByPlayer.set(session.playerID, false);
+    room.selectedCardIDsByPlayer.set(session.playerID, []);
   }
 
   getSession(matchID: string, playerID: string): RoomSession | undefined {
@@ -63,6 +66,7 @@ export class RoomRegistry {
     room.sessions.delete(playerID);
     room.presence.delete(playerID);
     room.readyByPlayer.delete(playerID);
+    room.selectedCardIDsByPlayer.delete(playerID);
   }
 
   isConnected(matchID: string, playerID: string): boolean {
@@ -100,6 +104,16 @@ export class RoomRegistry {
     for (const playerID of room.readyByPlayer.keys()) {
       room.readyByPlayer.set(playerID, false);
     }
+  }
+
+  setSelectedCardIDs(matchID: string, playerID: string, selectedCardIDs: number[]): void {
+    const room = this.ensureRoom(matchID);
+    room.selectedCardIDsByPlayer.set(playerID, [...selectedCardIDs]);
+  }
+
+  getSelectedCardIDs(matchID: string, playerID: string): number[] {
+    const selected = this.rooms.get(matchID)?.selectedCardIDsByPlayer.get(playerID) ?? [];
+    return [...selected];
   }
 
   setGameStarted(matchID: string, started: boolean): void {

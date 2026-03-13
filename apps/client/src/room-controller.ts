@@ -6,6 +6,7 @@ import {
   type ReadyRoomRequest,
   type RoomSession,
   type RoomSnapshot,
+  type UpdateSelectionRequest,
 } from '@acatgame/game-core';
 import { Client } from 'boardgame.io/client';
 import { SocketIO } from 'boardgame.io/multiplayer';
@@ -119,6 +120,24 @@ export class RoomController {
       body,
     });
     await this.syncBoardClient();
+    this.emit();
+  }
+
+  async updateSelection(selectedCardIDs: number[]) {
+    if (!this.session) {
+      return;
+    }
+
+    const body: UpdateSelectionRequest = {
+      playerID: this.session.playerID,
+      credentials: this.session.credentials,
+      selectedCardIDs,
+    };
+
+    this.snapshot = await this.request<RoomSnapshot>(`/api/rooms/${this.session.matchID}/selection`, {
+      method: 'POST',
+      body,
+    });
     this.emit();
   }
 
@@ -276,9 +295,11 @@ export class RoomController {
     }
 
     if (response.status === 204) {
+      this.error = null;
       return undefined as T;
     }
 
+    this.error = null;
     return (await response.json()) as T;
   }
 

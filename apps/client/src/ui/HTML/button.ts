@@ -11,6 +11,7 @@ export interface ButtonOptions {
   variant?: ButtonVariant;
   text?: string;
   visible?: boolean;
+  disabled?: boolean;
   onClick?: (() => void) | null;
   type?: 'button' | 'submit' | 'reset';
   minWidth?: number;
@@ -22,6 +23,7 @@ export interface ButtonComponent {
   element: HTMLButtonElement;
   setText(text: string): void;
   setVisible(visible: boolean): void;
+  setDisabled(disabled: boolean): void;
   setOnClick(handler: (() => void) | null): void;
   setMinWidth(minWidth: number): void;
   setStyles(styles: Partial<CSSStyleDeclaration>): void;
@@ -37,6 +39,7 @@ export function createButton(options: ButtonOptions = {}): ButtonComponent {
 
   const element = createDomElement('button', className);
   element.type = options.type ?? 'button';
+  element.disabled = options.disabled ?? false;
 
   if (typeof options.text === 'string') {
     element.textContent = options.text;
@@ -56,6 +59,9 @@ export function createButton(options: ButtonOptions = {}): ButtonComponent {
     },
     setVisible(visible) {
       element.style.display = visible ? '' : 'none';
+    },
+    setDisabled(disabled) {
+      element.disabled = disabled;
     },
     setOnClick(handler) {
       element.onclick = handler;

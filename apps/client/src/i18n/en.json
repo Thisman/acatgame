@@ -27,7 +27,8 @@
   },
   "ready": {
     "waitingForSecondPlayer": "Waiting for the second player...",
-    "pressReady": "Press ready when you are set"
+    "pressReady": "Press ready when you are set",
+    "selectionProgress": "Choose cards {count}/{limit} and press Ready"
   },
   "game": {
     "syncing": "Syncing game...",
@@ -48,6 +49,8 @@
     "room_full": "Room is full.",
     "room_waiting_for_players": "Room is still waiting for players.",
     "ready_change_forbidden": "Ready state cannot be changed now.",
+    "ready_selection_invalid": "Selected cards are invalid.",
+    "ready_selection_required": "Choose exactly 15 cards before pressing Ready.",
     "room_not_found": "Room not found.",
     "invalid_room_session": "Invalid room session.",
     "internal_server_error": "Internal server error.",

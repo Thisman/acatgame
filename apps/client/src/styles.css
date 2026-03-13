@@ -161,6 +161,17 @@ canvas {
   box-shadow: 0 3px 0 var(--ui-accent-border), 0 6px 12px rgba(92, 75, 81, 0.2);
 }
 
+.ui-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+  box-shadow: 0 6px 0 rgba(92, 75, 81, 0.2), 0 8px 12px rgba(92, 75, 81, 0.12);
+}
+
+.ui-button:disabled:hover {
+  background: var(--ui-accent-bg);
+}
+
 .ui-button--secondary {
   background: var(--ui-secondary-bg);
   color: var(--ui-secondary-text);
@@ -173,6 +184,10 @@ canvas {
 
 .ui-button--secondary:active {
   box-shadow: 0 3px 0 var(--ui-secondary-border), 0 6px 12px rgba(92, 75, 81, 0.2);
+}
+
+.ui-button--secondary:disabled:hover {
+  background: var(--ui-secondary-bg);
 }
 
 .ui-error {
@@ -208,6 +223,14 @@ canvas {
 .ui-game-actions {
   gap: 12px;
   pointer-events: auto;
+}
+
+.ui-game-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
 }
 
 .ui-game-status,
