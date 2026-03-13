@@ -42,6 +42,7 @@ export interface RenderCatCardOptions {
   spriteScale?: number;
   tooltipTitle?: string;
   tooltipText?: string;
+  faceTint?: number;
 }
 
 const CAT_CARD_SIZE = 98;
@@ -200,7 +201,7 @@ export function renderCatCard(card: CatCardView, options: RenderCatCardOptions) 
 
   card.face.setDisplaySize(cardSize, cardSize);
   card.face.setPosition(0, faceY);
-  card.face.setTint(0xfff7de);
+  card.face.setTint(options.faceTint ?? 0xfff7de);
   card.face.setAlpha(alpha);
 
   card.border.setDisplaySize(cardSize, cardSize);

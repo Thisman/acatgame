@@ -3,6 +3,7 @@ import {
   CAT_MATCH_BOARD_SIZE,
   CAT_MATCH_HAND_SIZE,
   getAdjacentConvertMechanic,
+  getAdjacentPushMechanic,
   type BoardCell,
   type BoardCellEffect,
   type RoomSnapshot,
@@ -47,7 +48,10 @@ interface ComputedGameLayout {
   handStartX: number;
 }
 
-interface PendingConvertPlacement {
+type TargetedPlacementMode = 'convert' | 'push';
+
+interface PendingTargetedPlacement {
+  mode: TargetedPlacementMode;
   cellX: number;
   cellY: number;
   handIndex: number;
@@ -56,6 +60,18 @@ interface PendingConvertPlacement {
 }
 
 const getBoardIndex = (cellX: number, cellY: number) => cellY * CAT_MATCH_BOARD_SIZE + cellX;
+
+const getTargetingModeForCard = (cardID: number | null): TargetedPlacementMode | null => {
+  if (cardID !== null && getAdjacentConvertMechanic(cardID)) {
+    return 'convert';
+  }
+
+  if (cardID !== null && getAdjacentPushMechanic(cardID)) {
+    return 'push';
+  }
+
+  return null;
+};
 
 const getAdjacentEnemyBoardIndexes = (
   board: Array<BoardCell | null>,
@@ -106,6 +122,68 @@ const getAdjacentEnemyBoardIndexes = (
   return targetBoardIndexes;
 };
 
+const getAdjacentOccupiedOrthogonalBoardIndexes = (
+  board: Array<BoardCell | null>,
+  cellX: number,
+  cellY: number,
+  cardID: number | null,
+) => {
+  const mechanic = cardID === null ? null : getAdjacentPushMechanic(cardID);
+
+  if (!mechanic) {
+    return [];
+  }
+
+  const targetBoardIndexes: number[] = [];
+
+  for (const [deltaX, deltaY] of [
+    [0, -1],
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+  ] as const) {
+    const targetX = cellX + deltaX;
+    const targetY = cellY + deltaY;
+
+    if (
+      targetX < 0 ||
+      targetX >= CAT_MATCH_BOARD_SIZE ||
+      targetY < 0 ||
+      targetY >= CAT_MATCH_BOARD_SIZE
+    ) {
+      continue;
+    }
+
+    const targetBoardIndex = getBoardIndex(targetX, targetY);
+
+    if (board[targetBoardIndex]) {
+      targetBoardIndexes.push(targetBoardIndex);
+    }
+  }
+
+  return targetBoardIndexes;
+};
+
+const getTargetBoardIndexesForCard = (
+  board: Array<BoardCell | null>,
+  cellX: number,
+  cellY: number,
+  playerID: string,
+  cardID: number | null,
+) => {
+  const mode = getTargetingModeForCard(cardID);
+
+  if (mode === 'convert') {
+    return getAdjacentEnemyBoardIndexes(board, cellX, cellY, playerID, cardID);
+  }
+
+  if (mode === 'push') {
+    return getAdjacentOccupiedOrthogonalBoardIndexes(board, cellX, cellY, cardID);
+  }
+
+  return [];
+};
+
 export class GamePhaseView {
   private scene!: Phaser.Scene;
   private deps!: GamePhaseViewDeps;
@@ -117,7 +195,7 @@ export class GamePhaseView {
   private selectedHandIndex: number | null = null;
   private hoveredCellKey: string | null = null;
   private hoveredHandIndex: number | null = null;
-  private pendingConvertPlacement: PendingConvertPlacement | null = null;
+  private pendingTargetedPlacement: PendingTargetedPlacement | null = null;
 
   create(deps: GamePhaseViewDeps): void {
     this.scene = deps.scene;
@@ -275,7 +353,7 @@ export class GamePhaseView {
       this.resetPlacementSelection();
     } else {
       this.selectedHandIndex = handIndex;
-      this.pendingConvertPlacement = null;
+      this.pendingTargetedPlacement = null;
     }
 
     this.rerender();
@@ -299,26 +377,26 @@ export class GamePhaseView {
     const handIndex = this.selectedHandIndex;
     const cardID = hand[handIndex] ?? null;
     const boardIndex = getBoardIndex(cellX, cellY);
-    const convertMechanic = cardID === null ? null : getAdjacentConvertMechanic(cardID);
+    const targetingMode = getTargetingModeForCard(cardID);
 
     if (cardID === null) {
       return;
     }
 
-    if (convertMechanic && this.pendingConvertPlacement) {
+    if (targetingMode && this.pendingTargetedPlacement) {
       const pendingPlacementIndex = getBoardIndex(
-        this.pendingConvertPlacement.cellX,
-        this.pendingConvertPlacement.cellY,
+        this.pendingTargetedPlacement.cellX,
+        this.pendingTargetedPlacement.cellY,
       );
 
       if (boardIndex === pendingPlacementIndex) {
-        this.pendingConvertPlacement = null;
+        this.pendingTargetedPlacement = null;
         this.rerender();
         return;
       }
 
-      if (this.pendingConvertPlacement.targetBoardIndexes.includes(boardIndex)) {
-        const pendingPlacement = this.pendingConvertPlacement;
+      if (this.pendingTargetedPlacement.targetBoardIndexes.includes(boardIndex)) {
+        const pendingPlacement = this.pendingTargetedPlacement;
         this.resetPlacementSelection();
         this.rerender();
         void this.deps.controller.placeCat(
@@ -340,14 +418,15 @@ export class GamePhaseView {
       return;
     }
 
-    if (convertMechanic) {
-      const targetBoardIndexes = getAdjacentEnemyBoardIndexes(board, cellX, cellY, sessionPlayerID, cardID);
+    if (targetingMode) {
+      const targetBoardIndexes = getTargetBoardIndexesForCard(board, cellX, cellY, sessionPlayerID, cardID);
 
       if (targetBoardIndexes.length === 0) {
         return;
       }
 
-      this.pendingConvertPlacement = {
+      this.pendingTargetedPlacement = {
+        mode: targetingMode,
         cellX,
         cellY,
         handIndex,
@@ -384,11 +463,11 @@ export class GamePhaseView {
       if (selectedCardID === null) {
         this.resetPlacementSelection();
       } else if (
-        this.pendingConvertPlacement &&
-        (this.pendingConvertPlacement.handIndex !== this.selectedHandIndex ||
-          this.pendingConvertPlacement.cardID !== selectedCardID)
+        this.pendingTargetedPlacement &&
+        (this.pendingTargetedPlacement.handIndex !== this.selectedHandIndex ||
+          this.pendingTargetedPlacement.cardID !== selectedCardID)
       ) {
-        this.pendingConvertPlacement = null;
+        this.pendingTargetedPlacement = null;
       }
     }
 
@@ -430,8 +509,8 @@ export class GamePhaseView {
 
     const inset = 8;
     const selectedCardID = this.selectedHandIndex === null ? null : hand[this.selectedHandIndex] ?? null;
-    const convertMechanic = selectedCardID === null ? null : getAdjacentConvertMechanic(selectedCardID);
-    const pendingTargetBoardIndexes = new Set(this.pendingConvertPlacement?.targetBoardIndexes ?? []);
+    const targetingMode = getTargetingModeForCard(selectedCardID);
+    const pendingTargetBoardIndexes = new Set(this.pendingTargetedPlacement?.targetBoardIndexes ?? []);
 
     for (const cell of this.gridCells) {
       const centerX = gameLayout.boardRect.x + gameLayout.cellSize * (cell.x + 0.5);
@@ -443,28 +522,26 @@ export class GamePhaseView {
       const blocked = !boardCell && Boolean(placementLock);
       const hovered = this.hoveredCellKey === `${cell.x}:${cell.y}`;
       const pendingPlacement =
-        this.pendingConvertPlacement?.cellX === cell.x && this.pendingConvertPlacement?.cellY === cell.y;
-      const convertTarget = pendingTargetBoardIndexes.has(boardIndex);
-      const convertPlacementTargetIndexes =
-        canPlay && convertMechanic && !boardCell && !blocked
-          ? getAdjacentEnemyBoardIndexes(board, cell.x, cell.y, sessionPlayerID, selectedCardID)
+        this.pendingTargetedPlacement?.cellX === cell.x && this.pendingTargetedPlacement?.cellY === cell.y;
+      const targetedCell = pendingTargetBoardIndexes.has(boardIndex);
+      const targetedPlacementOptions =
+        canPlay && targetingMode && !boardCell && !blocked
+          ? getTargetBoardIndexesForCard(board, cell.x, cell.y, sessionPlayerID, selectedCardID)
           : [];
-      const convertPlacementCandidate =
-        Boolean(convertMechanic) &&
-        !this.pendingConvertPlacement &&
+      const targetedPlacementCandidate =
+        Boolean(targetingMode) &&
+        !this.pendingTargetedPlacement &&
         !boardCell &&
         !blocked &&
-        convertPlacementTargetIndexes.length > 0;
-      const selectable = convertMechanic
-        ? Boolean(convertPlacementCandidate || pendingPlacement || convertTarget)
+        targetedPlacementOptions.length > 0;
+      const selectable = targetingMode
+        ? Boolean(targetedPlacementCandidate || pendingPlacement || targetedCell)
         : canPlay && !boardCell && !blocked && this.selectedHandIndex !== null;
       const fillColor = blocked
         ? 0xf8d8ac
         : pendingPlacement
           ? 0xd8f0e4
-        : convertTarget
-          ? 0xffe1cf
-        : convertPlacementCandidate
+        : targetedPlacementCandidate
           ? 0xe6f6ef
         : hovered && selectable
           ? 0xfff7de
@@ -475,19 +552,15 @@ export class GamePhaseView {
       cell.tile.setSize(gameLayout.cellSize - inset, gameLayout.cellSize - inset);
       cell.tile.setFillStyle(fillColor, 1);
       if (boardCell) {
-        if (convertTarget) {
-          cell.tile.setStrokeStyle(4, UI_THEME.accentBorderNumber, 1);
-        } else {
-          cell.tile.setStrokeStyle();
-        }
+        cell.tile.setStrokeStyle();
       } else {
         cell.tile.setStrokeStyle(
-          pendingPlacement ? 4 : blocked || convertPlacementCandidate || (hovered && selectable) ? 3 : 2,
+          pendingPlacement ? 4 : blocked || targetedPlacementCandidate || (hovered && selectable) ? 3 : 2,
           pendingPlacement
             ? 0x5f978c
             : blocked
               ? UI_THEME.accentBorderNumber
-              : convertPlacementCandidate
+              : targetedPlacementCandidate
                 ? 0x5f978c
                 : UI_THEME.surfaceStrongNumber,
           1,
@@ -511,8 +584,9 @@ export class GamePhaseView {
           interactive: true,
           cardSize: gameLayout.cellSize - 14,
           spriteScale: Math.min((gameLayout.cellSize - 36) / 64, 1),
-          hovered: hovered || convertTarget,
-          selected: convertTarget,
+          hovered,
+          selected: false,
+          faceTint: targetedCell ? 0xffd4bf : undefined,
           tooltipTitle: tooltipContent.title,
           tooltipText: tooltipContent.text,
         });
@@ -578,7 +652,7 @@ export class GamePhaseView {
 
   private resetPlacementSelection() {
     this.selectedHandIndex = null;
-    this.pendingConvertPlacement = null;
+    this.pendingTargetedPlacement = null;
   }
 
   private canLocalPlayerMove(state: RoomControllerState) {

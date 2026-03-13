@@ -11,6 +11,7 @@ import {
 } from './constants.js';
 import {
   getAdjacentConvertMechanic,
+  getAdjacentPushMechanic,
   getCardDefinition,
   type ArmedMineEffect,
   type BoardCellEffect,
@@ -220,6 +221,17 @@ const getAdjacentEnemyBoardIndexes = (
     return Boolean(cell && cell.playerID !== playerID);
   });
 
+const getOccupiedNeighborBoardIndexes = (
+  board: Array<BoardCell | null>,
+  cellX: number,
+  cellY: number,
+  radius: number,
+  includeDiagonals: boolean,
+) =>
+  getNeighborBoardIndexes(cellX, cellY, radius, includeDiagonals).filter((boardIndex) =>
+    Boolean(board[boardIndex]),
+  );
+
 const applyOnPlaceMechanics = (
   G: ClickRaceState,
   boardIndex: number,
@@ -229,8 +241,9 @@ const applyOnPlaceMechanics = (
   cardID: number,
   move: number,
   selectedTargetBoardIndex: number | null,
-) => {
+): number | null => {
   const cardDefinition = getCardDefinition(cardID);
+  let affectedBoardIndex: number | null = null;
 
   for (const mechanic of cardDefinition.mechanics) {
     if (mechanic.trigger !== 'onPlace') {
@@ -313,10 +326,66 @@ const applyOnPlaceMechanics = (
           playerID,
           move,
         };
+        affectedBoardIndex = selectedTargetBoardIndex;
+        break;
+      }
+      case 'adjacentPush': {
+        if (selectedTargetBoardIndex === null) {
+          break;
+        }
+
+        const targetCell = G.board[selectedTargetBoardIndex];
+
+        if (!targetCell) {
+          break;
+        }
+
+        const sourceX = boardIndex % CAT_MATCH_BOARD_SIZE;
+        const sourceY = Math.floor(boardIndex / CAT_MATCH_BOARD_SIZE);
+        const targetX = selectedTargetBoardIndex % CAT_MATCH_BOARD_SIZE;
+        const targetY = Math.floor(selectedTargetBoardIndex / CAT_MATCH_BOARD_SIZE);
+        const directionX = targetX - sourceX;
+        const directionY = targetY - sourceY;
+
+        if (Math.abs(directionX) + Math.abs(directionY) !== 1) {
+          break;
+        }
+
+        const destinationX = targetX + directionX;
+        const destinationY = targetY + directionY;
+
+        if (
+          destinationX < 0 ||
+          destinationX >= CAT_MATCH_BOARD_SIZE ||
+          destinationY < 0 ||
+          destinationY >= CAT_MATCH_BOARD_SIZE
+        ) {
+          break;
+        }
+
+        const destinationBoardIndex = destinationY * CAT_MATCH_BOARD_SIZE + destinationX;
+
+        if (G.board[destinationBoardIndex]) {
+          break;
+        }
+
+        G.board[destinationBoardIndex] = targetCell;
+        G.board[selectedTargetBoardIndex] = null;
+        G.cellEffects[destinationBoardIndex] = [
+          ...G.cellEffects[destinationBoardIndex],
+          ...G.cellEffects[selectedTargetBoardIndex].map((effect) => ({
+            ...effect,
+            sourceBoardIndex: destinationBoardIndex,
+          })),
+        ];
+        G.cellEffects[selectedTargetBoardIndex] = [];
+        affectedBoardIndex = destinationBoardIndex;
         break;
       }
     }
   }
+
+  return affectedBoardIndex;
 };
 
 const fisherYatesShuffle = <T>(values: T[]) => {
@@ -580,21 +649,28 @@ const placeCatMove: MoveFn<ClickRaceState> = (
   }
 
   const convertMechanic = getAdjacentConvertMechanic(cardID);
+  const pushMechanic = getAdjacentPushMechanic(cardID);
   let selectedTargetBoardIndex: number | null = null;
-  let selectedTargetX: number | null = null;
-  let selectedTargetY: number | null = null;
 
-  if (convertMechanic) {
-    const adjacentEnemyBoardIndexes = getAdjacentEnemyBoardIndexes(
-      G.board,
-      cellX,
-      cellY,
-      playerID,
-      convertMechanic.radius,
-      convertMechanic.includeDiagonals,
-    );
+  if (convertMechanic || pushMechanic) {
+    const validTargetBoardIndexes = convertMechanic
+      ? getAdjacentEnemyBoardIndexes(
+          G.board,
+          cellX,
+          cellY,
+          playerID,
+          convertMechanic.radius,
+          convertMechanic.includeDiagonals,
+        )
+      : getOccupiedNeighborBoardIndexes(
+          G.board,
+          cellX,
+          cellY,
+          pushMechanic!.radius,
+          pushMechanic!.includeDiagonals,
+        );
 
-    if (adjacentEnemyBoardIndexes.length === 0) {
+    if (validTargetBoardIndexes.length === 0) {
       return INVALID_MOVE;
     }
 
@@ -612,11 +688,9 @@ const placeCatMove: MoveFn<ClickRaceState> = (
       return INVALID_MOVE;
     }
 
-    selectedTargetX = normalizedTargetX;
-    selectedTargetY = normalizedTargetY;
-    selectedTargetBoardIndex = selectedTargetY * CAT_MATCH_BOARD_SIZE + selectedTargetX;
+    selectedTargetBoardIndex = normalizedTargetY * CAT_MATCH_BOARD_SIZE + normalizedTargetX;
 
-    if (!adjacentEnemyBoardIndexes.includes(selectedTargetBoardIndex)) {
+    if (!validTargetBoardIndexes.includes(selectedTargetBoardIndex)) {
       return INVALID_MOVE;
     }
   }
@@ -631,19 +705,33 @@ const placeCatMove: MoveFn<ClickRaceState> = (
   playerState.placedCount += 1;
   G.cellEffects = advanceCellEffects(G);
 
+  let affectedBoardIndex: number | null = null;
+
   if (G.board[boardIndex]?.playerID === playerID && G.board[boardIndex]?.cardID === cardID) {
-    applyOnPlaceMechanics(G, boardIndex, cellX, cellY, playerID, cardID, ctx.turn, selectedTargetBoardIndex);
+    affectedBoardIndex = applyOnPlaceMechanics(
+      G,
+      boardIndex,
+      cellX,
+      cellY,
+      playerID,
+      cardID,
+      ctx.turn,
+      selectedTargetBoardIndex,
+    );
   }
 
   refreshPlayerSummaries(G);
 
-  const convertedCellWon =
-    selectedTargetBoardIndex !== null &&
-    selectedTargetX !== null &&
-    selectedTargetY !== null &&
-    G.board[selectedTargetBoardIndex]?.playerID === playerID &&
-    hasWinningLine(G.board, selectedTargetX, selectedTargetY, playerID);
-  const roundWon = hasWinningLine(G.board, cellX, cellY, playerID) || convertedCellWon;
+  const affectedCellWon =
+    affectedBoardIndex !== null &&
+    G.board[affectedBoardIndex]?.playerID === playerID &&
+    hasWinningLine(
+      G.board,
+      affectedBoardIndex % CAT_MATCH_BOARD_SIZE,
+      Math.floor(affectedBoardIndex / CAT_MATCH_BOARD_SIZE),
+      playerID,
+    );
+  const roundWon = hasWinningLine(G.board, cellX, cellY, playerID) || affectedCellWon;
   const roundDraw = !roundWon && isRoundDraw(G);
 
   if (!roundWon && !roundDraw) {

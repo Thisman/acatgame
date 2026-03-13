@@ -1,6 +1,6 @@
 import { READY_CARD_POOL_SIZE } from './constants.js';
 
-export type CardAnimationVariant = 'default' | 'blocker' | 'convert' | 'mine';
+export type CardAnimationVariant = 'default' | 'blocker' | 'convert' | 'push' | 'mine';
 
 export interface CardVisualProfile {
   animation: CardAnimationVariant;
@@ -34,10 +34,20 @@ export interface AdjacentConvertMechanicDefinition {
   maxTargets: 1;
 }
 
+export interface AdjacentPushMechanicDefinition {
+  type: 'adjacentPush';
+  trigger: 'onPlace';
+  radius: 1;
+  includeDiagonals: false;
+  target: 'occupiedNeighbors';
+  maxTargets: 1;
+}
+
 export type CardMechanicDefinition =
   | PlacementLockAuraMechanicDefinition
   | DelayedExplosionMechanicDefinition
-  | AdjacentConvertMechanicDefinition;
+  | AdjacentConvertMechanicDefinition
+  | AdjacentPushMechanicDefinition;
 
 export interface PlacementLockEffect {
   type: 'placementLock';
@@ -71,6 +81,7 @@ export interface CardDefinition {
 const BLOCKER_CARD_IDS = new Set([0, 1, 2]);
 const CONVERT_CARD_IDS = new Set([3, 4, 5]);
 const MINE_CARD_IDS = new Set([6, 7, 8]);
+const PUSH_CARD_IDS = new Set([9, 10, 11]);
 
 const BLOCKER_MECHANIC: PlacementLockAuraMechanicDefinition = {
   type: 'placementLockAura',
@@ -97,6 +108,15 @@ const CONVERT_MECHANIC: AdjacentConvertMechanicDefinition = {
   radius: 1,
   includeDiagonals: true,
   target: 'enemyNeighbors',
+  maxTargets: 1,
+};
+
+const PUSH_MECHANIC: AdjacentPushMechanicDefinition = {
+  type: 'adjacentPush',
+  trigger: 'onPlace',
+  radius: 1,
+  includeDiagonals: false,
+  target: 'occupiedNeighbors',
   maxTargets: 1,
 };
 
@@ -130,6 +150,16 @@ const createConvertCardDefinition = (id: number): CardDefinition => ({
   mechanics: [CONVERT_MECHANIC],
 });
 
+const createPushCardDefinition = (id: number): CardDefinition => ({
+  id,
+  nameKey: 'cards.push.name',
+  descriptionKey: 'cards.push.description',
+  visual: {
+    animation: 'push',
+  },
+  mechanics: [PUSH_MECHANIC],
+});
+
 const createNormalCardDefinition = (id: number): CardDefinition => ({
   id,
   nameKey: 'cards.normal.name',
@@ -147,6 +177,8 @@ const CARD_DEFINITIONS = Array.from({ length: READY_CARD_POOL_SIZE }, (_value, c
     ? createBlockerCardDefinition(cardID)
     : CONVERT_CARD_IDS.has(cardID)
       ? createConvertCardDefinition(cardID)
+      : PUSH_CARD_IDS.has(cardID)
+        ? createPushCardDefinition(cardID)
     : MINE_CARD_IDS.has(cardID)
       ? createMineCardDefinition(cardID)
       : createNormalCardDefinition(cardID),
@@ -160,4 +192,9 @@ export const getAllCardDefinitions = (): readonly CardDefinition[] => CARD_DEFIN
 export const getAdjacentConvertMechanic = (cardID: number): AdjacentConvertMechanicDefinition | null =>
   getCardDefinition(cardID).mechanics.find(
     (mechanic): mechanic is AdjacentConvertMechanicDefinition => mechanic.type === 'adjacentConvert',
+  ) ?? null;
+
+export const getAdjacentPushMechanic = (cardID: number): AdjacentPushMechanicDefinition | null =>
+  getCardDefinition(cardID).mechanics.find(
+    (mechanic): mechanic is AdjacentPushMechanicDefinition => mechanic.type === 'adjacentPush',
   ) ?? null;

@@ -18,12 +18,14 @@ export const PLAYER_CAT_ANIMATION_KEYS = {
     default: 'player-cat-idle-0',
     blocker: 'player-cat-blocker-0',
     convert: 'player-cat-convert-0',
+    push: 'player-cat-push-0',
     mine: 'player-cat-mine-0',
   },
   '1': {
     default: 'player-cat-idle-1',
     blocker: 'player-cat-blocker-1',
     convert: 'player-cat-convert-1',
+    push: 'player-cat-push-1',
     mine: 'player-cat-mine-1',
   },
 } as const;
@@ -39,8 +41,10 @@ const BLOCKER_ROW_INDEX = 3;
 const BLOCKER_ANIMATION_FRAMES = 4;
 const CONVERT_ROW_INDEX = 11;
 const CONVERT_ANIMATION_FRAMES = 4;
-const MINE_ROW_INDEX = 17;
-const MINE_ANIMATION_FRAMES = 8;
+const PUSH_ROW_INDEX = 4;
+const PUSH_ANIMATION_FRAMES = 10;
+const MINE_ROW_INDEX = 7;
+const MINE_ANIMATION_FRAMES = 12;
 
 export const READY_CARD_SPRITESHEET_KEY = PLAYER_CAT_SPRITESHEET_KEYS['0'];
 export const READY_CARD_ANIMATION_KEY = PLAYER_CAT_ANIMATION_KEYS['0'].default;
@@ -173,6 +177,14 @@ function getFrameRangeForVariant(variant: CardAnimationVariant) {
     return {
       start,
       end: start + CONVERT_ANIMATION_FRAMES - 1,
+    };
+  }
+
+  if (variant === 'push') {
+    const start = PUSH_ROW_INDEX * CAT_SPRITESHEET_COLUMNS;
+    return {
+      start,
+      end: start + PUSH_ANIMATION_FRAMES - 1,
     };
   }
 

@@ -39,6 +39,10 @@
       "name": "Convert Cat",
       "description": "Can only be placed next to an enemy cat and flips one adjacent enemy cat to your color after placement."
     },
+    "push": {
+      "name": "Push Cat",
+      "description": "Can only be placed if there is an occupied cell directly above, below, left, or right. After placement, pushes one adjacent occupied cell one step outward."
+    },
     "mine": {
       "name": "Mine Cat",
       "description": "Explodes after 2 turns and clears all 8 adjacent cells along with its own."

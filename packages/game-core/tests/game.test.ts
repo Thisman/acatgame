@@ -90,13 +90,16 @@ test('placeCat fills a cell and refills the same hand slot', () => {
 test('blocker card metadata is exposed through the catalog', () => {
   const blockerCard = getCardDefinition(0);
   const convertCard = getCardDefinition(3);
+  const pushCard = getCardDefinition(9);
   const mineCard = getCardDefinition(6);
-  const normalCard = getCardDefinition(9);
+  const normalCard = getCardDefinition(12);
 
   assert.equal(blockerCard.visual.animation, 'blocker');
   assert.equal(blockerCard.mechanics[0]?.type, 'placementLockAura');
   assert.equal(convertCard.visual.animation, 'convert');
   assert.equal(convertCard.mechanics[0]?.type, 'adjacentConvert');
+  assert.equal(pushCard.visual.animation, 'push');
+  assert.equal(pushCard.mechanics[0]?.type, 'adjacentPush');
   assert.equal(mineCard.visual.animation, 'mine');
   assert.equal(mineCard.mechanics[0]?.type, 'delayedExplosion');
   assert.equal(normalCard.visual.animation, 'default');
@@ -241,6 +244,205 @@ test('a converted adjacent cat can complete a winning line', () => {
     1,
     3,
     2,
+    0,
+  );
+
+  assert.deepEqual(state.roundResult, { round: 1, winner: '0', draw: false });
+  assert.equal(state.roundWinsByPlayer['0'], 1);
+});
+
+test('a push cat cannot be placed without an adjacent orthogonal occupied cell', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [9, 1, 2, 3, 4];
+  state.players['0'].deck = [5, 6, 7, 8, 10];
+
+  const result = placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 1 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+    3,
+    2,
+  );
+
+  assert.equal(result, 'INVALID_MOVE');
+  assert.equal(state.board[24], null);
+});
+
+test('a push cat must target one adjacent orthogonal occupied cell', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [9, 1, 2, 3, 4];
+  state.players['0'].deck = [5, 6, 7, 8, 10];
+  state.board[17] = { playerID: '1', cardID: 12, move: 1 };
+
+  const missingTargetResult = placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 2 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+  );
+
+  assert.equal(missingTargetResult, 'INVALID_MOVE');
+
+  const diagonalTargetResult = placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 2 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+    2,
+    2,
+  );
+
+  assert.equal(diagonalTargetResult, 'INVALID_MOVE');
+});
+
+test('a push cat shifts an adjacent occupied orthogonal cell outward by one cell', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [9, 1, 2, 3, 4];
+  state.players['0'].deck = [5, 6, 7, 8, 10];
+  state.board[17] = { playerID: '1', cardID: 12, move: 1 };
+  let nextPlayer = '';
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 2 },
+      playerID: '0',
+      events: {
+        endTurn(arg) {
+          nextPlayer = arg.next;
+        },
+      },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+    3,
+    2,
+  );
+
+  assert.deepEqual(state.board[24], {
+    playerID: '0',
+    cardID: 9,
+    move: 2,
+  });
+  assert.equal(state.board[17], null);
+  assert.deepEqual(state.board[10], {
+    playerID: '1',
+    cardID: 12,
+    move: 1,
+  });
+  assert.equal(nextPlayer, '1');
+});
+
+test('a push cat still ends the turn if the chosen target cannot move', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [9, 1, 2, 3, 4];
+  state.players['0'].deck = [5, 6, 7, 8, 10];
+  state.board[3] = { playerID: '1', cardID: 12, move: 1 };
+  let nextPlayer = '';
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 2 },
+      playerID: '0',
+      events: {
+        endTurn(arg) {
+          nextPlayer = arg.next;
+        },
+      },
+      random: orderedShuffle,
+    },
+    3,
+    1,
+    0,
+    3,
+    0,
+  );
+
+  assert.deepEqual(state.board[10], {
+    playerID: '0',
+    cardID: 9,
+    move: 2,
+  });
+  assert.deepEqual(state.board[3], {
+    playerID: '1',
+    cardID: 12,
+    move: 1,
+  });
+  assert.equal(nextPlayer, '1');
+});
+
+test('a shifted friendly cat can complete a winning line', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.players['0'].hand = [9, 1, 2, 3, 4];
+  state.players['0'].deck = [5, 6, 7, 8, 10];
+  state.board[0] = { playerID: '0', cardID: 12, move: 1 };
+  state.board[1] = { playerID: '0', cardID: 13, move: 2 };
+  state.board[3] = { playerID: '0', cardID: 14, move: 3 };
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 4 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    2,
+    1,
+    0,
+    3,
     0,
   );
 
@@ -652,7 +854,7 @@ test('a round is a draw when the last remaining card is placed without a line', 
   state.players['0'].hand = [null, null, null, null, null];
   state.players['0'].deck = [];
   state.players['0'].placedCount = READY_CARD_SELECTION_LIMIT;
-  state.players['1'].hand = [9, null, null, null, null];
+  state.players['1'].hand = [12, null, null, null, null];
   state.players['1'].deck = [];
   state.players['1'].placedCount = READY_CARD_SELECTION_LIMIT - 1;
 
@@ -696,7 +898,7 @@ test('the third round can end the whole match in a draw', () => {
   state.players['0'].hand = [null, null, null, null, null];
   state.players['0'].deck = [];
   state.players['0'].placedCount = READY_CARD_SELECTION_LIMIT;
-  state.players['1'].hand = [4, null, null, null, null];
+  state.players['1'].hand = [12, null, null, null, null];
   state.players['1'].deck = [];
   state.players['1'].placedCount = READY_CARD_SELECTION_LIMIT - 1;
 
