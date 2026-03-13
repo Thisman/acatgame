@@ -253,6 +253,20 @@ canvas {
   font-weight: 700;
 }
 
+.ui-game-meta.ui-turn-indicator {
+  margin: 0;
+  color: var(--ui-accent-bg);
+  font-size: clamp(18px, 2vw, 22px);
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.03em;
+  text-shadow: 0 0 14px rgba(240, 96, 96, 0.2);
+  line-height: 1.15;
+  transform-origin: center;
+  will-change: transform, opacity;
+  animation: ui-turn-heartbeat 1.4s ease-in-out infinite;
+}
+
 .ui-game-meta {
   color: var(--ui-text-soft);
   font-size: clamp(18px, 2vw, 22px);
@@ -288,6 +302,34 @@ canvas {
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes ui-turn-heartbeat {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.96);
+  }
+
+  18% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+
+  36% {
+    opacity: 0.84;
+    transform: scale(0.99);
+  }
+
+  52% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+
+  72% {
+    opacity: 0.78;
+    transform: scale(0.98);
   }
 }
 

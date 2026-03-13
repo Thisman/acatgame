@@ -33,6 +33,7 @@ export class RoomScene extends Phaser.Scene {
   private primaryButton!: ButtonComponent;
   private centerErrorText!: TextBlockComponent<HTMLParagraphElement>;
   private phaseInfo!: ContainerComponent<HTMLDivElement>;
+  private phaseTurnText!: TextBlockComponent<HTMLParagraphElement>;
   private phaseStatusText!: TextBlockComponent<HTMLParagraphElement>;
   private phaseMetaText!: TextBlockComponent<HTMLParagraphElement>;
   private phaseActions!: ContainerComponent<HTMLDivElement>;
@@ -103,12 +104,17 @@ export class RoomScene extends Phaser.Scene {
       display: 'flex',
       visible: false,
     });
+    this.phaseTurnText = createTextBlock({
+      variant: 'meta',
+      className: 'ui-turn-indicator',
+      visible: false,
+    });
     this.phaseStatusText = createTextBlock({
       variant: 'status',
       className: 'ui-game-status',
     });
     this.phaseMetaText = createTextBlock({ variant: 'meta' });
-    this.phaseInfo.element.append(this.phaseStatusText.element, this.phaseMetaText.element);
+    this.phaseInfo.element.append(this.phaseTurnText.element, this.phaseStatusText.element, this.phaseMetaText.element);
 
     this.phaseActions = createContainer('div', {
       className: 'ui-game-actions',
@@ -322,7 +328,7 @@ export class RoomScene extends Phaser.Scene {
     this.phaseActions.setVisible(true);
     this.phaseInfo.setStyles({
       left: `${roomLayout.centerX}px`,
-      top: `${roomLayout.board.y - 74}px`,
+      top: `${roomLayout.board.y - 122}px`,
       width: `${roomLayout.board.width}px`,
     });
     this.phaseActions.setStyles({
@@ -344,6 +350,11 @@ export class RoomScene extends Phaser.Scene {
     const round = state.gameState?.G?.currentRound ?? snapshot?.round ?? 1;
     const roundResult = state.gameState?.G?.roundResult ?? snapshot?.roundResult ?? null;
     const matchResult = snapshot?.matchResult ?? state.gameState?.G?.matchResult ?? null;
+    const currentPlayer = snapshot?.currentPlayer ?? state.gameState?.ctx?.currentPlayer ?? null;
+    const sessionPlayerID = state.session?.playerID ?? null;
+
+    this.phaseTurnText.setText('');
+    this.phaseTurnText.setVisible(false);
 
     if (!snapshot) {
       this.phaseStatusText.setText(t('game.syncing'));
@@ -384,13 +395,18 @@ export class RoomScene extends Phaser.Scene {
           : t('game.roundWinner', { round: roundResult.round, player: getPlayerLabel(roundResult.winner ?? '0') }),
       );
     } else {
+      if (currentPlayer && sessionPlayerID) {
+        this.phaseTurnText.setText(
+          currentPlayer === sessionPlayerID ? t('game.yourTurn') : t('game.waitingForOpponentTurn'),
+        );
+        this.phaseTurnText.setVisible(true);
+      }
       this.phaseStatusText.setText(t('game.matchActive'));
     }
 
-    this.phaseMetaText.setText(t('game.currentTurnRoundScore', {
+    this.phaseMetaText.setText(t('game.roundScore', {
       round,
       maxRounds: CAT_MATCH_MAX_ROUNDS,
-      player: getPlayerLabel(snapshot.currentPlayer ?? '0'),
       left: roundWins['0'] ?? 0,
       right: roundWins['1'] ?? 0,
       draws: snapshot.drawRounds ?? 0,
