@@ -3,6 +3,7 @@ import {
   ClickRaceGame,
   type LeaveRoomRequest,
   type PresencePingRequest,
+  type ReadyRoomRequest,
   type RoomSession,
   type RoomSnapshot,
 } from '@acatgame/game-core';
@@ -37,6 +38,7 @@ interface RequestOptions {
 export class RoomController {
   private readonly listeners = new Set<() => void>();
   private bgioClient: any = null;
+  private bgioStarted = false;
   private session: RoomSession | null = null;
   private snapshot: RoomSnapshot | null = null;
   private gameState: BoardgameState | null = null;
@@ -96,12 +98,43 @@ export class RoomController {
     this.reset();
   }
 
+  async setReady(ready: boolean) {
+    if (!this.session) {
+      return;
+    }
+
+    const body: ReadyRoomRequest = {
+      playerID: this.session.playerID,
+      credentials: this.session.credentials,
+      ready,
+    };
+
+    this.snapshot = await this.request<RoomSnapshot>(`/api/rooms/${this.session.matchID}/ready`, {
+      method: 'POST',
+      body,
+    });
+    await this.syncBoardClient();
+    this.emit();
+  }
+
+  async copyRoomCode() {
+    const roomCode = this.session?.matchID ?? this.snapshot?.matchID;
+
+    if (!roomCode || !navigator.clipboard) {
+      return false;
+    }
+
+    await navigator.clipboard.writeText(roomCode);
+    return true;
+  }
+
   async refreshSnapshot() {
     if (!this.session) {
       return;
     }
 
     this.snapshot = await this.request<RoomSnapshot>(`/api/rooms/${this.session.matchID}`);
+    await this.syncBoardClient();
     this.emit();
   }
 
@@ -119,6 +152,7 @@ export class RoomController {
     this.stopNetworking();
     this.bgioClient?.stop?.();
     this.bgioClient = null;
+    this.bgioStarted = false;
     this.session = null;
     this.snapshot = null;
     this.gameState = null;
@@ -134,23 +168,9 @@ export class RoomController {
     this.snapshot = null;
     this.error = null;
     this.gameState = null;
+    this.bgioClient = null;
+    this.bgioStarted = false;
 
-    this.bgioClient = Client({
-      game: ClickRaceGame,
-      numPlayers: CLICK_RACE_NUM_PLAYERS,
-      matchID: session.matchID,
-      playerID: session.playerID,
-      credentials: session.credentials,
-      multiplayer: SocketIO({ server: this.serverUrl }),
-      debug: false,
-    });
-
-    this.bgioClient.subscribe(() => {
-      this.gameState = this.bgioClient.getState();
-      this.emit();
-    });
-
-    this.bgioClient.start();
     await this.refreshSnapshot();
     await this.sendPresence();
     this.startNetworking();
@@ -194,7 +214,43 @@ export class RoomController {
       method: 'POST',
       body,
     });
+    await this.syncBoardClient();
     this.emit();
+  }
+
+  private async syncBoardClient() {
+    if (!this.session || !this.snapshot) {
+      return;
+    }
+
+    const needsGameClient = this.snapshot.phase === 'game' || this.snapshot.phase === 'gameover';
+
+    if (!needsGameClient) {
+      return;
+    }
+
+    if (!this.bgioClient) {
+      this.bgioClient = Client({
+        game: ClickRaceGame,
+        numPlayers: CLICK_RACE_NUM_PLAYERS,
+        matchID: this.session.matchID,
+        playerID: this.session.playerID,
+        credentials: this.session.credentials,
+        multiplayer: SocketIO({ server: this.serverUrl }),
+        debug: false,
+      });
+
+      this.bgioClient.subscribe(() => {
+        this.gameState = this.bgioClient.getState();
+        this.emit();
+      });
+    }
+
+    if (!this.bgioStarted) {
+      this.bgioClient.start();
+      this.bgioStarted = true;
+      this.gameState = this.bgioClient.getState();
+    }
   }
 
   private async request<T = void>(path: string, init: RequestOptions = {}) {

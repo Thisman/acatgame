@@ -5,6 +5,8 @@ import {
   type ClickRaceState,
   type LeaveRoomRequest,
   type PresencePingRequest,
+  type ReadyRoomRequest,
+  type RoomPhase,
   type RoomSession,
   type RoomSnapshot,
   type SeatState,
@@ -30,6 +32,7 @@ type StoredMatchState = {
 
 type StorageRecord = {
   state?: StoredMatchState;
+  initialState?: StoredMatchState;
 };
 
 const defaultScores = (): Record<string, number> => ({
@@ -87,24 +90,28 @@ export class RoomService {
       throw new HttpError(410, 'Room is closed.');
     }
 
-    await this.assertMatchExists(matchID);
+    const metadata = await this.getMetadata(matchID);
+    const seat = this.getNextAvailableSeat(metadata);
+
+    if (seat === null) {
+      throw new HttpError(409, 'Room is full.');
+    }
 
     const { playerCredentials } = await this.wrapLobbyError(() =>
       this.lobbyClient.joinMatch(CLICK_RACE_GAME_NAME, matchID, {
-        playerID: '1',
-        playerName: ROOM_SEAT_LABELS[1],
+        playerID: String(seat),
+        playerName: ROOM_SEAT_LABELS[seat],
       }),
     );
 
     const session: RoomSession = {
       matchID,
-      playerID: '1',
+      playerID: String(seat),
       credentials: playerCredentials,
-      seat: 1,
+      seat,
     };
 
     this.registry.storeSession(session);
-    await this.tryActivateStoredState(matchID);
     return session;
   }
 
@@ -120,12 +127,20 @@ export class RoomService {
       }),
     );
 
-    if (snapshot.status === 'waiting' && request.playerID === '0') {
-      this.registry.markClosed(matchID);
+    this.registry.removePlayer(matchID, request.playerID);
+
+    if (snapshot.phase !== 'game' && snapshot.phase !== 'gameover') {
+      this.registry.resetReady(matchID);
+      this.registry.setGameStarted(matchID, false);
+
+      const remainingPlayers = snapshot.seats.filter((seat) => seat.occupied && seat.playerID !== request.playerID);
+      if (remainingPlayers.length === 0) {
+        this.registry.markClosed(matchID);
+      }
       return;
     }
 
-    if (snapshot.status !== 'gameover') {
+    if (snapshot.phase === 'game') {
       this.registry.markForfeit(matchID, request.playerID === '0' ? '1' : '0');
     }
   }
@@ -133,6 +148,35 @@ export class RoomService {
   async markPresence(matchID: string, request: PresencePingRequest): Promise<RoomSnapshot> {
     this.assertAuthorized(matchID, request.playerID, request.credentials);
     this.registry.touch(matchID, request.playerID);
+    return this.getRoomSnapshot(matchID);
+  }
+
+  async setReady(matchID: string, request: ReadyRoomRequest): Promise<RoomSnapshot> {
+    this.assertAuthorized(matchID, request.playerID, request.credentials);
+
+    const snapshot = await this.getRoomSnapshot(matchID);
+
+    if (snapshot.phase === 'waiting') {
+      throw new HttpError(409, 'Room is still waiting for players.');
+    }
+
+    if (snapshot.phase === 'game' || snapshot.phase === 'gameover') {
+      throw new HttpError(409, 'Ready state cannot be changed now.');
+    }
+
+    this.registry.setReady(matchID, request.playerID, request.ready);
+
+    const nextSnapshot = await this.getRoomSnapshot(matchID);
+    const occupiedPlayerIDs = nextSnapshot.seats.filter((seat) => seat.occupied).map((seat) => seat.playerID);
+    const everyoneReady =
+      occupiedPlayerIDs.length === nextSnapshot.requiredPlayers &&
+      occupiedPlayerIDs.every((playerID) => nextSnapshot.readyByPlayer[playerID]);
+
+    if (everyoneReady && !this.registry.hasGameStarted(matchID)) {
+      await this.resetGameplayState(matchID);
+      this.registry.setGameStarted(matchID, true);
+    }
+
     return this.getRoomSnapshot(matchID);
   }
 
@@ -150,24 +194,31 @@ export class RoomService {
     const seats = this.buildSeatStates(matchID, metadata);
     const allOccupied = seats.every((seat) => seat.occupied);
     const allConnected = seats.every((seat) => !seat.occupied || seat.connected);
+    const gameStarted = this.registry.hasGameStarted(matchID);
+
+    if (!gameStarted && (!allOccupied || !allConnected)) {
+      this.registry.resetReady(matchID);
+    }
+
+    const phase = this.resolvePhase({
+      matchID,
+      allOccupied,
+      allConnected,
+      winner,
+    });
 
     return {
       matchID,
-      status: winner ? 'gameover' : allOccupied && allConnected ? 'active' : 'waiting',
+      status: phase === 'game' ? 'active' : phase === 'gameover' ? 'gameover' : 'waiting',
+      phase,
       seats,
       currentPlayer: storedState?.ctx?.currentPlayer ?? null,
       winner,
       circles,
       scores,
+      readyByPlayer: this.buildReadyState(matchID),
+      requiredPlayers: CLICK_RACE_NUM_PLAYERS,
     };
-  }
-
-  private async assertMatchExists(matchID: string): Promise<void> {
-    try {
-      await this.lobbyClient.getMatch(CLICK_RACE_GAME_NAME, matchID);
-    } catch {
-      throw new HttpError(404, 'Room not found.');
-    }
   }
 
   private async getMetadata(matchID: string): Promise<MatchMetadata> {
@@ -209,30 +260,63 @@ export class RoomService {
     }
   }
 
-  private async tryActivateStoredState(matchID: string): Promise<void> {
+  private async resetGameplayState(matchID: string): Promise<void> {
     const storage = this.db as {
       fetch?: (id: string, options: Record<string, boolean>) => Promise<StorageRecord>;
       setState?: (id: string, state: StoredMatchState, deltalog?: unknown) => Promise<void>;
     };
-    const record = await storage.fetch?.(matchID, { state: true, metadata: true });
+    const record = await storage.fetch?.(matchID, { state: true, initialState: true, metadata: true });
 
-    if (!record?.state?.G || !storage.setState) {
+    if (!record?.initialState || !storage.setState) {
       return;
     }
 
-    if (record.state.G.status !== 'waiting') {
-      return;
+    await storage.setState(matchID, record.initialState);
+  }
+
+  private getNextAvailableSeat(metadata: MatchMetadata): number | null {
+    for (let seat = 0; seat < CLICK_RACE_NUM_PLAYERS; seat += 1) {
+      const player = metadata.players?.find((entry: { id: number; name?: string }) => entry.id === seat);
+      if (!player?.name) {
+        return seat;
+      }
     }
 
-    const nextState: StoredMatchState = {
-      ...record.state,
-      G: {
-        ...record.state.G,
-        status: 'active',
-      },
-    };
+    return null;
+  }
 
-    await storage.setState(matchID, nextState);
+  private buildReadyState(matchID: string): Record<string, boolean> {
+    return ROOM_SEAT_LABELS.reduce<Record<string, boolean>>((acc, _label, seatIndex) => {
+      const playerID = String(seatIndex);
+      acc[playerID] = this.registry.isReady(matchID, playerID);
+      return acc;
+    }, {});
+  }
+
+  private resolvePhase({
+    matchID,
+    allOccupied,
+    allConnected,
+    winner,
+  }: {
+    matchID: string;
+    allOccupied: boolean;
+    allConnected: boolean;
+    winner: string | null;
+  }): RoomPhase {
+    if (winner) {
+      return 'gameover';
+    }
+
+    if (this.registry.hasGameStarted(matchID)) {
+      return 'game';
+    }
+
+    if (!allOccupied || !allConnected) {
+      return 'waiting';
+    }
+
+    return 'ready';
   }
 
   private async wrapLobbyError<T>(action: () => Promise<T>): Promise<T> {

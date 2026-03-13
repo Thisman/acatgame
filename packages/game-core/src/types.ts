@@ -1,4 +1,5 @@
 export type RoomStatus = 'waiting' | 'active' | 'gameover';
+export type RoomPhase = 'waiting' | 'ready' | 'game' | 'gameover';
 
 export interface CircleMark {
   id: string;
@@ -11,7 +12,6 @@ export interface CircleMark {
 export interface ClickRaceState {
   circles: CircleMark[];
   scoreByPlayer: Record<string, number>;
-  status: RoomStatus;
   winner: string | null;
 }
 
@@ -32,11 +32,14 @@ export interface RoomSession {
 export interface RoomSnapshot {
   matchID: string;
   status: RoomStatus;
+  phase: RoomPhase;
   seats: SeatState[];
   currentPlayer: string | null;
   winner: string | null;
   circles: CircleMark[];
   scores: Record<string, number>;
+  readyByPlayer: Record<string, boolean>;
+  requiredPlayers: number;
 }
 
 export interface PresencePingRequest {
@@ -46,3 +49,6 @@ export interface PresencePingRequest {
 
 export interface LeaveRoomRequest extends PresencePingRequest {}
 
+export interface ReadyRoomRequest extends PresencePingRequest {
+  ready: boolean;
+}

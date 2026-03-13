@@ -13,6 +13,16 @@ registry.storeSession({
 
 assert.equal(registry.validateSession('match-1', '0', 'secret'), true);
 assert.equal(registry.validateSession('match-1', '0', 'nope'), false);
+assert.equal(registry.isReady('match-1', '0'), false);
+
+registry.setReady('match-1', '0', true);
+assert.equal(registry.isReady('match-1', '0'), true);
+
+registry.resetReady('match-1');
+assert.equal(registry.isReady('match-1', '0'), false);
+
+registry.setGameStarted('match-1', true);
+assert.equal(registry.hasGameStarted('match-1'), true);
 
 const originalNow = Date.now;
 let now = new Date('2026-03-13T10:00:00Z').valueOf();

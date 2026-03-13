@@ -17,7 +17,6 @@ export const ClickRaceGame: Game<ClickRaceState> = {
   setup: () => ({
     circles: [],
     scoreByPlayer: createInitialScore(),
-    status: 'waiting',
     winner: null,
   }),
   turn: {
@@ -25,7 +24,7 @@ export const ClickRaceGame: Game<ClickRaceState> = {
   },
   moves: {
     placeCircle: (({ G, ctx, playerID }, xRatio: number, yRatio: number) => {
-      if (!playerID || G.status === 'gameover') {
+      if (!playerID || G.winner) {
         return;
       }
 
@@ -40,12 +39,7 @@ export const ClickRaceGame: Game<ClickRaceState> = {
       G.circles.push(circle);
       G.scoreByPlayer[playerID] = (G.scoreByPlayer[playerID] ?? 0) + 1;
 
-      if (G.status === 'waiting') {
-        G.status = 'active';
-      }
-
       if (G.scoreByPlayer[playerID] >= CIRCLES_TO_WIN) {
-        G.status = 'gameover';
         G.winner = playerID;
       }
     }) as MoveFn<ClickRaceState>,

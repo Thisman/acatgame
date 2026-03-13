@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 export class TextButton extends Phaser.GameObjects.Container {
   private readonly background: Phaser.GameObjects.Rectangle;
   private readonly label: Phaser.GameObjects.Text;
+  private readonly onClick: () => void;
 
   constructor(
     scene: Phaser.Scene,
@@ -14,11 +15,16 @@ export class TextButton extends Phaser.GameObjects.Container {
     onClick: () => void,
   ) {
     super(scene, x, y);
+    this.onClick = onClick;
 
     this.background = scene.add.rectangle(0, 0, width, height, 0xcbded9, 1);
     this.background.setStrokeStyle(2, 0x91ada6, 0.95);
     this.background.setInteractive({ useHandCursor: true });
-    this.background.on('pointerup', onClick);
+    this.background.on('pointerup', () => {
+      if (this.background.input?.enabled) {
+        this.onClick();
+      }
+    });
     this.background.on('pointerover', () => this.background.setFillStyle(0xd8e8e3, 1));
     this.background.on('pointerout', () => this.background.setFillStyle(0xcbded9, 1));
 
@@ -36,5 +42,20 @@ export class TextButton extends Phaser.GameObjects.Container {
 
   setButtonPosition(x: number, y: number) {
     this.setPosition(x, y);
+  }
+
+  setLabel(text: string) {
+    this.label.setText(text);
+  }
+
+  setDisabled(disabled: boolean) {
+    this.background.disableInteractive();
+
+    if (!disabled) {
+      this.background.setInteractive({ useHandCursor: true });
+    }
+
+    this.background.setAlpha(disabled ? 0.55 : 1);
+    this.label.setAlpha(disabled ? 0.6 : 1);
   }
 }

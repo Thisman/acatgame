@@ -7,8 +7,10 @@ interface PresenceEntry {
 interface RoomRegistryEntry {
   closed: boolean;
   forfeitWinner: string | null;
+  gameStarted: boolean;
   sessions: Map<string, RoomSession>;
   presence: Map<string, PresenceEntry>;
+  readyByPlayer: Map<string, boolean>;
 }
 
 export class RoomRegistry {
@@ -23,8 +25,10 @@ export class RoomRegistry {
       entry = {
         closed: false,
         forfeitWinner: null,
+        gameStarted: false,
         sessions: new Map(),
         presence: new Map(),
+        readyByPlayer: new Map(),
       };
       this.rooms.set(matchID, entry);
     }
@@ -37,6 +41,7 @@ export class RoomRegistry {
     room.closed = false;
     room.sessions.set(session.playerID, session);
     room.presence.set(session.playerID, { lastSeenAt: Date.now() });
+    room.readyByPlayer.set(session.playerID, false);
   }
 
   getSession(matchID: string, playerID: string): RoomSession | undefined {
@@ -51,6 +56,13 @@ export class RoomRegistry {
   touch(matchID: string, playerID: string): void {
     const room = this.ensureRoom(matchID);
     room.presence.set(playerID, { lastSeenAt: Date.now() });
+  }
+
+  removePlayer(matchID: string, playerID: string): void {
+    const room = this.ensureRoom(matchID);
+    room.sessions.delete(playerID);
+    room.presence.delete(playerID);
+    room.readyByPlayer.delete(playerID);
   }
 
   isConnected(matchID: string, playerID: string): boolean {
@@ -73,5 +85,29 @@ export class RoomRegistry {
   getForfeitWinner(matchID: string): string | null {
     return this.rooms.get(matchID)?.forfeitWinner ?? null;
   }
-}
 
+  setReady(matchID: string, playerID: string, ready: boolean): void {
+    const room = this.ensureRoom(matchID);
+    room.readyByPlayer.set(playerID, ready);
+  }
+
+  isReady(matchID: string, playerID: string): boolean {
+    return this.rooms.get(matchID)?.readyByPlayer.get(playerID) ?? false;
+  }
+
+  resetReady(matchID: string): void {
+    const room = this.ensureRoom(matchID);
+    for (const playerID of room.readyByPlayer.keys()) {
+      room.readyByPlayer.set(playerID, false);
+    }
+  }
+
+  setGameStarted(matchID: string, started: boolean): void {
+    const room = this.ensureRoom(matchID);
+    room.gameStarted = started;
+  }
+
+  hasGameStarted(matchID: string): boolean {
+    return this.rooms.get(matchID)?.gameStarted ?? false;
+  }
+}

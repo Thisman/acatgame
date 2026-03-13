@@ -9,8 +9,12 @@ export interface LobbyLayout {
 }
 
 export interface RoomLayout {
+  width: number;
+  height: number;
   board: Phaser.Geom.Rectangle;
   centerX: number;
+  centerY: number;
+  contentWidth: number;
 }
 
 export class ResponsiveLayout {
@@ -37,11 +41,14 @@ export class ResponsiveLayout {
     const boardHeight = Math.max(360, height - 320);
 
     return {
+      width,
+      height,
       centerX: width / 2,
+      centerY: height / 2,
+      contentWidth: Math.min(620, width - marginX * 2),
       board: new Phaser.Geom.Rectangle(marginX, top, width - marginX * 2, boardHeight),
     };
   }
 }
 
 export const layout = new ResponsiveLayout();
-
