@@ -1,18 +1,56 @@
 export type RoomStatus = 'waiting' | 'active' | 'gameover';
 export type RoomPhase = 'waiting' | 'ready' | 'game' | 'gameover';
 
-export interface CircleMark {
-  id: string;
+export interface BoardCell {
   playerID: string;
-  xRatio: number;
-  yRatio: number;
-  turn: number;
+  cardID: number;
+  move: number;
+}
+
+export interface RoundResult {
+  round: number;
+  winner: string | null;
+  draw: boolean;
+}
+
+export interface MatchResult {
+  winner: string | null;
+  draw: boolean;
+}
+
+export interface PrivatePlayerState {
+  selectedCardIDs: number[];
+  deck: number[];
+  hand: Array<number | null>;
+  placedCount: number;
+}
+
+export interface PublicPlayerSummary {
+  handCount: number;
+  deckCount: number;
+  placedCount: number;
+}
+
+export interface LocalPlayerState {
+  hand: Array<number | null>;
+  deckCount: number;
+  selectedCardIDs: number[];
 }
 
 export interface ClickRaceState {
-  circles: CircleMark[];
-  scoreByPlayer: Record<string, number>;
+  board: Array<BoardCell | null>;
+  currentRound: number;
+  roundWinsByPlayer: Record<string, number>;
+  drawRounds: number;
+  roundResult: RoundResult | null;
+  matchResult: MatchResult | null;
   winner: string | null;
+  players: Record<string, PrivatePlayerState>;
+  playerSummaries: Record<string, PublicPlayerSummary>;
+}
+
+export interface ClickRaceClientState extends Omit<ClickRaceState, 'players'> {
+  localPlayer: LocalPlayerState | null;
 }
 
 export interface SeatState {
@@ -36,8 +74,12 @@ export interface RoomSnapshot {
   seats: SeatState[];
   currentPlayer: string | null;
   winner: string | null;
-  circles: CircleMark[];
-  scores: Record<string, number>;
+  board: Array<BoardCell | null>;
+  round: number;
+  roundWinsByPlayer: Record<string, number>;
+  drawRounds: number;
+  roundResult: RoundResult | null;
+  matchResult: MatchResult | null;
   readyByPlayer: Record<string, boolean>;
   selectedCardIDsByPlayer: Record<string, number[]>;
   requiredPlayers: number;

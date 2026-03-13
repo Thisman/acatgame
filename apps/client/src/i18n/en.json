@@ -32,11 +32,14 @@
   },
   "game": {
     "syncing": "Syncing game...",
-    "score": "Score: {left} - {right}",
-    "winner": "Winner: {player}",
-    "finalScore": "Final score: {left} - {right}",
     "matchActive": "Match active",
-    "currentTurnScore": "Current turn: {player} | Score: {left} - {right}"
+    "roundWinner": "Round {round}: {player} wins",
+    "roundDraw": "Round {round}: draw",
+    "matchWinner": "{player} wins the match",
+    "matchDraw": "The match ends in a draw",
+    "roundScore": "Round {round}/{maxRounds} | Wins: {left} - {right} | Draws: {draws}",
+    "currentTurnRoundScore": "Round {round}/{maxRounds} | Turn: {player} | Wins: {left} - {right} | Draws: {draws}",
+    "finalRoundScore": "Final rounds score: {left} - {right} | Draws: {draws}"
   },
   "players": {
     "1": "Player 1",

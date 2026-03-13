@@ -1,6 +1,7 @@
 import {
   CLICK_RACE_NUM_PLAYERS,
   ClickRaceGame,
+  type ClickRaceClientState,
   type LeaveRoomRequest,
   type PresencePingRequest,
   type ReadyRoomRequest,
@@ -14,13 +15,10 @@ import { SocketIO } from 'boardgame.io/multiplayer';
 import { UiError } from './ui-error.js';
 
 type BoardgameState = {
-  G?: {
-    circles?: RoomSnapshot['circles'];
-    scoreByPlayer?: RoomSnapshot['scores'];
-    winner?: string | null;
-  };
+  G?: ClickRaceClientState;
   ctx?: {
     currentPlayer?: string | null;
+    gameover?: RoomSnapshot['matchResult'];
   };
   isActive?: boolean;
   isConnected?: boolean;
@@ -162,14 +160,14 @@ export class RoomController {
     this.emit();
   }
 
-  async placeCircle(xRatio: number, yRatio: number) {
+  async placeCat(cellX: number, cellY: number, handIndex: number) {
     this.error = null;
 
     if (!this.bgioClient) {
       return;
     }
 
-    this.bgioClient.moves.placeCircle(xRatio, yRatio);
+    this.bgioClient.moves.placeCat(cellX, cellY, handIndex);
   }
 
   reset() {

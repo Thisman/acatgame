@@ -8,6 +8,7 @@ export const UI_THEME = {
   backgroundNumber: 0xF2EBBF,
   textNumber: 0x5C4B51,
   cardNumber: 0x8CBEB2,
+  surfaceStrongNumber: 0x78AB9F,
   cardBorderLightNumber: 0xA8D1C7,
   cardHighlightNumber: 0xA8D1C7,
   accentNumber: 0xF06060,

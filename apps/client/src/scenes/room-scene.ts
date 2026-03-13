@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import {
+  CAT_MATCH_MAX_ROUNDS,
   READY_CARD_SELECTION_LIMIT,
   type RoomPhase,
   type RoomSnapshot,
@@ -39,6 +40,10 @@ export class RoomScene extends Phaser.Scene {
   private phasePrimaryButton!: ButtonComponent;
   private phaseLeaveButton!: ButtonComponent;
   private phaseErrorText!: TextBlockComponent<HTMLParagraphElement>;
+  private resultCard!: CardComponent;
+  private resultStatusText!: TextBlockComponent<HTMLParagraphElement>;
+  private resultMetaText!: TextBlockComponent<HTMLParagraphElement>;
+  private resultExitButton!: ButtonComponent;
   private unsubscribe: (() => void) | null = null;
   private unsubscribeI18n: (() => void) | null = null;
   private boardView = new GamePhaseView();
@@ -122,10 +127,32 @@ export class RoomScene extends Phaser.Scene {
     this.phaseButtonsRow.element.append(this.phasePrimaryButton.element, this.phaseLeaveButton.element);
     this.phaseActions.element.append(this.phaseButtonsRow.element, this.phaseErrorText.element);
 
+    this.resultCard = createCard({ className: 'ui-card--result', visible: false });
+    this.resultStatusText = createTextBlock({
+      variant: 'status',
+      className: 'ui-result-status',
+    });
+    this.resultMetaText = createTextBlock({
+      variant: 'meta',
+      className: 'ui-result-meta',
+    });
+    this.resultExitButton = createButton({
+      text: t('actions.leaveRoom'),
+      onClick: () => {
+        void this.handleLeave();
+      },
+    });
+    this.resultCard.element.append(
+      this.resultStatusText.element,
+      this.resultMetaText.element,
+      this.resultExitButton.element,
+    );
+
     this.overlay.element.append(
       this.centerCard.element,
       this.phaseInfo.element,
       this.phaseActions.element,
+      this.resultCard.element,
     );
   }
 
@@ -164,6 +191,7 @@ export class RoomScene extends Phaser.Scene {
     this.centerCard.setVisible(false);
     this.phaseInfo.setVisible(false);
     this.phaseActions.setVisible(false);
+    this.resultCard.setVisible(false);
     this.centerCard.setWidth(centerWidth);
     this.primaryButton.setOnClick(null);
     this.phasePrimaryButton.setOnClick(null);
@@ -211,6 +239,7 @@ export class RoomScene extends Phaser.Scene {
 
     this.phaseInfo.setVisible(true);
     this.phaseActions.setVisible(true);
+    this.phaseButtonsRow.setVisible(true);
     this.phaseInfo.setStyles({
       left: `${roomLayout.centerX}px`,
       top: `${roomLayout.board.y - 78}px`,
@@ -270,34 +299,80 @@ export class RoomScene extends Phaser.Scene {
     });
     this.phasePrimaryButton.setVisible(false);
     this.phasePrimaryButton.setDisabled(false);
-    this.phaseLeaveButton.setVisible(true);
-    this.phaseLeaveButton.setText(t('actions.leaveRoom'));
+    this.phaseLeaveButton.setVisible(false);
+    this.phaseButtonsRow.setVisible(false);
     this.phaseErrorText.setText(errorMessage);
+    this.phaseActions.setVisible(Boolean(errorMessage));
 
-    const scores = state.gameState?.G?.scoreByPlayer ?? snapshot?.scores ?? { '0': 0, '1': 0 };
-    const winner = snapshot?.winner ?? state.gameState?.G?.winner ?? null;
+    const roundWins = state.gameState?.G?.roundWinsByPlayer ?? snapshot?.roundWinsByPlayer ?? { '0': 0, '1': 0 };
+    const round = state.gameState?.G?.currentRound ?? snapshot?.round ?? 1;
+    const roundResult = state.gameState?.G?.roundResult ?? snapshot?.roundResult ?? null;
+    const matchResult = snapshot?.matchResult ?? state.gameState?.G?.matchResult ?? null;
 
     if (!snapshot) {
       this.phaseStatusText.setText(t('game.syncing'));
-      this.phaseMetaText.setText(t('game.score', { left: 0, right: 0 }));
+      this.phaseMetaText.setText(t('game.roundScore', {
+        round: 1,
+        maxRounds: CAT_MATCH_MAX_ROUNDS,
+        left: 0,
+        right: 0,
+        draws: 0,
+      }));
       this.phaseMetaText.setVisible(true);
       return;
     }
 
     this.phaseMetaText.setVisible(true);
 
-    if (winner) {
-      this.phaseStatusText.setText(t('game.winner', { player: getPlayerLabel(winner) }));
-      this.phaseMetaText.setText(t('game.finalScore', { left: scores['0'] ?? 0, right: scores['1'] ?? 0 }));
+    if (matchResult) {
+      this.phaseStatusText.setText(
+        matchResult.draw
+          ? t('game.matchDraw')
+          : t('game.matchWinner', { player: getPlayerLabel(matchResult.winner ?? '0') }),
+      );
+      this.phaseMetaText.setText(t('game.roundScore', {
+        round: snapshot.round,
+        maxRounds: CAT_MATCH_MAX_ROUNDS,
+        left: roundWins['0'] ?? 0,
+        right: roundWins['1'] ?? 0,
+        draws: snapshot.drawRounds ?? 0,
+      }));
+      this.renderResultPopup(matchResult.draw ? null : matchResult.winner, roundWins, snapshot.drawRounds ?? 0);
       return;
     }
 
-    this.phaseStatusText.setText(t('game.matchActive'));
-    this.phaseMetaText.setText(t('game.currentTurnScore', {
+    if (roundResult) {
+      this.phaseStatusText.setText(
+        roundResult.draw
+          ? t('game.roundDraw', { round: roundResult.round })
+          : t('game.roundWinner', { round: roundResult.round, player: getPlayerLabel(roundResult.winner ?? '0') }),
+      );
+    } else {
+      this.phaseStatusText.setText(t('game.matchActive'));
+    }
+
+    this.phaseMetaText.setText(t('game.currentTurnRoundScore', {
+      round,
+      maxRounds: CAT_MATCH_MAX_ROUNDS,
       player: getPlayerLabel(snapshot.currentPlayer ?? '0'),
-      left: scores['0'] ?? 0,
-      right: scores['1'] ?? 0,
+      left: roundWins['0'] ?? 0,
+      right: roundWins['1'] ?? 0,
+      draws: snapshot.drawRounds ?? 0,
     }));
+  }
+
+  private renderResultPopup(winner: string | null, roundWins: Record<string, number>, drawRounds: number) {
+    this.resultCard.setVisible(true);
+    this.resultCard.setWidth(Math.min(420, window.innerWidth - 48));
+    this.resultStatusText.setText(
+      winner ? t('game.matchWinner', { player: getPlayerLabel(winner) }) : t('game.matchDraw'),
+    );
+    this.resultMetaText.setText(t('game.finalRoundScore', {
+      left: roundWins['0'] ?? 0,
+      right: roundWins['1'] ?? 0,
+      draws: drawRounds,
+    }));
+    this.resultExitButton.setText(t('actions.leaveRoom'));
   }
 
   private async handleCopy() {

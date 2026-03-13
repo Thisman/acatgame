@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { READY_CARD_SELECTION_LIMIT } from '@acatgame/game-core';
+import { READY_CARD_SELECTION_LIMIT, createGameplayState } from '@acatgame/game-core';
 
 import { RoomRegistry } from '../dist/room-registry.js';
 import { HttpError, RoomService } from '../dist/room-service.js';
@@ -70,11 +70,7 @@ serviceRegistry.storeSession({
 const roomService = new RoomService('http://localhost:8000', serviceRegistry, {
   fetch: async () => ({
     state: {
-      G: {
-        circles: [],
-        scoreByPlayer: { '0': 0, '1': 0 },
-        winner: null,
-      },
+      G: createGameplayState(),
       ctx: {
         currentPlayer: '0',
       },
@@ -96,6 +92,8 @@ assert.deepEqual(initialSnapshot.selectedCardIDsByPlayer, {
   '0': [],
   '1': [],
 });
+assert.equal(initialSnapshot.board.length, 49);
+assert.equal(initialSnapshot.matchResult, null);
 
 await roomService.updateSelection('match-3', {
   playerID: '0',
@@ -148,5 +146,58 @@ const unreadySnapshot = await roomService.setReady('match-3', {
 });
 assert.equal(unreadySnapshot.readyByPlayer['0'], false);
 assert.deepEqual(unreadySnapshot.selectedCardIDsByPlayer['0'], fullSelection);
+
+const gameRegistry = new RoomRegistry(10_000);
+gameRegistry.storeSession({
+  matchID: 'match-4',
+  playerID: '0',
+  credentials: 'secret-0',
+  seat: 0,
+});
+gameRegistry.storeSession({
+  matchID: 'match-4',
+  playerID: '1',
+  credentials: 'secret-1',
+  seat: 1,
+});
+gameRegistry.setGameStarted('match-4', true);
+
+const gameState = createGameplayState(
+  {
+    '0': fullSelection,
+    '1': fullSelection,
+  },
+  {
+    Shuffle(items) {
+      return [...items];
+    },
+  },
+);
+gameState.roundResult = { round: 1, winner: '0', draw: false };
+gameState.currentRound = 2;
+
+const gameRoomService = new RoomService('http://localhost:8000', gameRegistry, {
+  fetch: async () => ({
+    state: {
+      G: gameState,
+      ctx: {
+        currentPlayer: '1',
+      },
+    },
+  }),
+});
+
+gameRoomService.lobbyClient = roomService.lobbyClient;
+
+const activeSnapshot = await gameRoomService.getRoomSnapshot('match-4');
+assert.equal(activeSnapshot.phase, 'game');
+assert.equal(activeSnapshot.round, 2);
+assert.deepEqual(activeSnapshot.roundResult, { round: 1, winner: '0', draw: false });
+assert.equal(activeSnapshot.matchResult, null);
+
+gameState.matchResult = { winner: null, draw: true };
+const finalSnapshot = await gameRoomService.getRoomSnapshot('match-4');
+assert.equal(finalSnapshot.phase, 'gameover');
+assert.deepEqual(finalSnapshot.matchResult, { winner: null, draw: true });
 
 console.log('server tests passed');

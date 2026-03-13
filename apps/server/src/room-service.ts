@@ -8,13 +8,16 @@ import {
   type ClickRaceState,
   type ErrorCode,
   type LeaveRoomRequest,
+  type MatchResult,
   type PresencePingRequest,
   type ReadyRoomRequest,
   type RoomPhase,
   type RoomSession,
   type RoomSnapshot,
+  type RoundResult,
   type SeatState,
   type UpdateSelectionRequest,
+  createGameplayState,
 } from '@acatgame/game-core';
 import type { LobbyClient as LobbyClientType } from 'boardgame.io/client';
 
@@ -32,18 +35,18 @@ type StoredMatchState = {
   G?: ClickRaceState;
   ctx?: {
     currentPlayer?: string;
+    gameover?: MatchResult;
   };
+  _stateID?: number;
+  _undo?: unknown[];
+  _redo?: unknown[];
+  plugins?: Record<string, unknown>;
 };
 
 type StorageRecord = {
   state?: StoredMatchState;
   initialState?: StoredMatchState;
 };
-
-const defaultScores = (): Record<string, number> => ({
-  '0': 0,
-  '1': 0,
-});
 
 export class HttpError extends Error {
   constructor(
@@ -226,10 +229,19 @@ export class RoomService {
 
     const metadata = await this.getMetadata(matchID);
     const storedState = await this.getStoredMatchState(matchID);
-    const circles = storedState?.G?.circles ?? [];
-    const scores = storedState?.G?.scoreByPlayer ?? defaultScores();
     const forfeitWinner = this.registry.getForfeitWinner(matchID);
-    const winner = forfeitWinner ?? storedState?.G?.winner ?? null;
+    const board = storedState?.G?.board ?? [];
+    const roundWinsByPlayer = storedState?.G?.roundWinsByPlayer ?? { '0': 0, '1': 0 };
+    const drawRounds = storedState?.G?.drawRounds ?? 0;
+    const roundResult = storedState?.G?.roundResult ?? null;
+    const storedMatchResult = storedState?.G?.matchResult ?? storedState?.ctx?.gameover ?? null;
+    const matchResult = forfeitWinner
+      ? {
+          winner: forfeitWinner,
+          draw: false,
+        }
+      : storedMatchResult;
+    const winner = matchResult?.winner ?? null;
     const seats = this.buildSeatStates(matchID, metadata);
     const allOccupied = seats.every((seat) => seat.occupied);
     const allConnected = seats.every((seat) => !seat.occupied || seat.connected);
@@ -243,7 +255,7 @@ export class RoomService {
       matchID,
       allOccupied,
       allConnected,
-      winner,
+      matchResult,
     });
 
     return {
@@ -253,8 +265,12 @@ export class RoomService {
       seats,
       currentPlayer: storedState?.ctx?.currentPlayer ?? null,
       winner,
-      circles,
-      scores,
+      board,
+      round: storedState?.G?.currentRound ?? 1,
+      roundWinsByPlayer,
+      drawRounds,
+      roundResult,
+      matchResult,
       readyByPlayer: this.buildReadyState(matchID),
       selectedCardIDsByPlayer: this.buildSelectedCardsState(matchID),
       requiredPlayers: CLICK_RACE_NUM_PLAYERS,
@@ -311,7 +327,19 @@ export class RoomService {
       return;
     }
 
-    await storage.setState(matchID, record.initialState);
+    const selectedCardIDsByPlayer = this.buildSelectedCardsState(matchID);
+    const gameState = createGameplayState(selectedCardIDsByPlayer);
+    const initialState = record.initialState;
+
+    await storage.setState(matchID, {
+      ...initialState,
+      G: gameState,
+      ctx: {
+        ...initialState.ctx,
+        currentPlayer: '0',
+        gameover: undefined,
+      },
+    });
   }
 
   private getNextAvailableSeat(metadata: MatchMetadata): number | null {
@@ -375,14 +403,14 @@ export class RoomService {
     matchID,
     allOccupied,
     allConnected,
-    winner,
+    matchResult,
   }: {
     matchID: string;
     allOccupied: boolean;
     allConnected: boolean;
-    winner: string | null;
+    matchResult: MatchResult | null;
   }): RoomPhase {
-    if (winner) {
+    if (matchResult) {
       return 'gameover';
     }
 

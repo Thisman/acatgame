@@ -41,6 +41,7 @@ export class RoomRegistry {
   storeSession(session: RoomSession): void {
     const room = this.ensureRoom(session.matchID);
     room.closed = false;
+    room.forfeitWinner = null;
     room.sessions.set(session.playerID, session);
     room.presence.set(session.playerID, { lastSeenAt: Date.now() });
     room.readyByPlayer.set(session.playerID, false);
@@ -119,6 +120,10 @@ export class RoomRegistry {
   setGameStarted(matchID: string, started: boolean): void {
     const room = this.ensureRoom(matchID);
     room.gameStarted = started;
+
+    if (started) {
+      room.forfeitWinner = null;
+    }
   }
 
   hasGameStarted(matchID: string): boolean {

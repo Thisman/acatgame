@@ -75,6 +75,14 @@ canvas {
   gap: 14px;
 }
 
+.ui-card--result {
+  gap: 16px;
+  padding: 28px 30px;
+  border-radius: 24px;
+  background: rgba(255, 250, 231, 0.96);
+  box-shadow: 0 10px 0 var(--ui-surface-strong), 0 22px 34px var(--ui-shadow-strong);
+}
+
 .ui-title {
   margin: 0;
   color: var(--ui-text);
@@ -248,6 +256,21 @@ canvas {
 .ui-game-meta {
   color: var(--ui-text-soft);
   font-size: clamp(18px, 2vw, 22px);
+}
+
+.ui-result-status,
+.ui-result-meta {
+  margin: 0;
+  text-align: center;
+}
+
+.ui-result-status {
+  color: var(--ui-text);
+}
+
+.ui-result-meta {
+  color: var(--ui-text-soft);
+  max-width: 320px;
 }
 
 @keyframes ui-spin {

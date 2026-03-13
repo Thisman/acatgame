@@ -1,32 +1,113 @@
-import type { RoomSnapshot } from '@acatgame/game-core';
 import Phaser from 'phaser';
-
-import { PLAYER_COLORS } from '@acatgame/game-core';
+import {
+  CAT_MATCH_BOARD_SIZE,
+  CAT_MATCH_HAND_SIZE,
+  type BoardCell,
+  type RoomSnapshot,
+} from '@acatgame/game-core';
 
 import type { RoomLayout } from '../layout.js';
+import {
+  getPlayerCatAnimationKey,
+  getPlayerCatBaseTexture,
+} from '../ready-card-assets.js';
 import type { RoomController } from '../room-controller.js';
 import type { RoomControllerState } from '../room-controller.js';
 import { UI_THEME } from '../theme.js';
 import { drawBoardSurface } from '../ui/canvas/board-surface.js';
-import { drawPlayerCircle } from '../ui/canvas/player-circle.js';
+import { createCatCardView, renderCatCard, type CatCardView } from '../ui/canvas/cat-card.js';
 
 interface GamePhaseViewDeps {
   scene: Phaser.Scene;
   controller: RoomController;
 }
 
+interface GridCellView {
+  x: number;
+  y: number;
+  tile: Phaser.GameObjects.Rectangle;
+  card: CatCardView;
+}
+
+interface ComputedGameLayout {
+  boardRect: Phaser.Geom.Rectangle;
+  cellSize: number;
+  handY: number;
+  handStartX: number;
+}
+
 export class GamePhaseView {
   private scene!: Phaser.Scene;
   private deps!: GamePhaseViewDeps;
   private boardGraphics!: Phaser.GameObjects.Graphics;
+  private gridCells: GridCellView[] = [];
+  private handCards: CatCardView[] = [];
   private lastLayout: RoomLayout | null = null;
   private visible = false;
+  private selectedHandIndex: number | null = null;
+  private hoveredCellKey: string | null = null;
+  private hoveredHandIndex: number | null = null;
 
   create(deps: GamePhaseViewDeps): void {
     this.scene = deps.scene;
     this.deps = deps;
     this.boardGraphics = this.scene.add.graphics();
-    this.scene.input.on('pointerdown', this.handleBoardClick, this);
+
+    for (let y = 0; y < CAT_MATCH_BOARD_SIZE; y += 1) {
+      for (let x = 0; x < CAT_MATCH_BOARD_SIZE; x += 1) {
+        const tile = this.scene.add.rectangle(0, 0, 10, 10, 0xfff7de, 1).setOrigin(0.5);
+        tile.setStrokeStyle(2, UI_THEME.cardBorderLightNumber, 0.85);
+        tile.setInteractive({ useHandCursor: true });
+        tile.on('pointerdown', () => {
+          this.handleCellPressed(x, y);
+        });
+        tile.on('pointerover', () => {
+          this.hoveredCellKey = `${x}:${y}`;
+          this.rerender();
+        });
+        tile.on('pointerout', () => {
+          if (this.hoveredCellKey === `${x}:${y}`) {
+            this.hoveredCellKey = null;
+            this.rerender();
+          }
+        });
+        const card = createCatCardView({
+          scene: this.scene,
+          id: y * CAT_MATCH_BOARD_SIZE + x,
+          textureKey: getPlayerCatBaseTexture(this.scene, '0'),
+          animationKey: getPlayerCatAnimationKey(this.scene, '0'),
+          interactive: false,
+        });
+        card.container.setVisible(false);
+
+        this.gridCells.push({ x, y, tile, card });
+      }
+    }
+
+    for (let handIndex = 0; handIndex < CAT_MATCH_HAND_SIZE; handIndex += 1) {
+      this.handCards.push(
+        createCatCardView({
+          scene: this.scene,
+          id: handIndex,
+          textureKey: getPlayerCatBaseTexture(this.scene, '0'),
+          animationKey: getPlayerCatAnimationKey(this.scene, '0'),
+          onPress: () => {
+            this.handleHandPressed(handIndex);
+          },
+          onHover: () => {
+            this.hoveredHandIndex = handIndex;
+            this.rerender();
+          },
+          onOut: () => {
+            if (this.hoveredHandIndex === handIndex) {
+              this.hoveredHandIndex = null;
+              this.rerender();
+            }
+          },
+        }),
+      );
+    }
+
     this.hide();
   }
 
@@ -35,14 +116,22 @@ export class GamePhaseView {
     this.boardGraphics.setVisible(true);
 
     if (this.lastLayout) {
-      const circles = state.gameState?.G?.circles ?? snapshot?.circles ?? [];
-      this.drawBoard(this.lastLayout.board, circles);
+      this.render(this.lastLayout, snapshot, state);
     }
   }
 
   hide(): void {
     this.visible = false;
     this.boardGraphics?.setVisible(false);
+
+    for (const cell of this.gridCells) {
+      cell.tile.setVisible(false);
+      cell.card.container.setVisible(false);
+    }
+
+    for (const card of this.handCards) {
+      card.container.setVisible(false);
+    }
   }
 
   layout(roomLayout: RoomLayout): void {
@@ -50,74 +139,219 @@ export class GamePhaseView {
 
     if (this.visible) {
       const state = this.deps.controller.getState();
-      const circles = state.gameState?.G?.circles ?? state.snapshot?.circles ?? [];
-      this.drawBoard(roomLayout.board, circles);
+      this.render(roomLayout, state.snapshot, state);
     }
   }
 
   destroy(): void {
-    this.scene.input.off('pointerdown', this.handleBoardClick, this);
     this.boardGraphics.destroy();
+
+    for (const cell of this.gridCells) {
+      cell.tile.destroy();
+      cell.card.container.destroy(true);
+    }
+
+    for (const card of this.handCards) {
+      card.container.destroy(true);
+    }
   }
 
-  private handleBoardClick(pointer: Phaser.Input.Pointer) {
-    if (!this.visible || !this.lastLayout) {
+  private handleHandPressed(handIndex: number) {
+    if (!this.visible) {
+      return;
+    }
+
+    const state = this.deps.controller.getState();
+    const hand = state.gameState?.G?.localPlayer?.hand ?? [];
+    const cardID = hand[handIndex] ?? null;
+
+    if (cardID === null) {
+      return;
+    }
+
+    this.selectedHandIndex = this.selectedHandIndex === handIndex ? null : handIndex;
+    this.rerender();
+  }
+
+  private handleCellPressed(cellX: number, cellY: number) {
+    if (!this.visible || this.selectedHandIndex === null) {
       return;
     }
 
     const state = this.deps.controller.getState();
 
-    if (!state.session || !state.snapshot || !state.gameState) {
+    if (!this.canLocalPlayerMove(state)) {
       return;
     }
 
-    const canPlay =
-      state.snapshot.phase === 'game' &&
-      state.gameState.isConnected &&
-      state.gameState.ctx?.currentPlayer === state.session.playerID;
+    const board = state.gameState?.G?.board ?? state.snapshot?.board ?? [];
 
-    if (!canPlay || !Phaser.Geom.Rectangle.Contains(this.lastLayout.board, pointer.x, pointer.y)) {
+    if (board[cellY * CAT_MATCH_BOARD_SIZE + cellX]) {
       return;
     }
 
-    const xRatio = (pointer.x - this.lastLayout.board.x) / this.lastLayout.board.width;
-    const yRatio = (pointer.y - this.lastLayout.board.y) / this.lastLayout.board.height;
-
-    void this.deps.controller.placeCircle(xRatio, yRatio);
+    const handIndex = this.selectedHandIndex;
+    this.selectedHandIndex = null;
+    this.rerender();
+    void this.deps.controller.placeCat(cellX, cellY, handIndex);
   }
 
-  private drawBoard(board: Phaser.Geom.Rectangle, circles: Array<{ playerID: string; xRatio: number; yRatio: number }>) {
+  private render(roomLayout: RoomLayout, snapshot: RoomSnapshot | null, state: RoomControllerState) {
+    const board = state.gameState?.G?.board ?? snapshot?.board ?? [];
+    const hand = state.gameState?.G?.localPlayer?.hand ?? [];
+    const sessionPlayerID = state.session?.playerID ?? '0';
+    const gameLayout = this.getGameLayout(roomLayout);
+    const canPlay = this.canLocalPlayerMove(state);
+
+    if (this.selectedHandIndex !== null && hand[this.selectedHandIndex] === null) {
+      this.selectedHandIndex = null;
+    }
+
+    this.drawBoard(gameLayout, board, canPlay);
+    this.drawHand(gameLayout, hand, sessionPlayerID, canPlay);
+  }
+
+  private drawBoard(gameLayout: ComputedGameLayout, board: Array<BoardCell | null>, canPlay: boolean) {
     this.boardGraphics.clear();
     drawBoardSurface(this.boardGraphics, {
-      rect: board,
-      radius: 36,
+      rect: gameLayout.boardRect,
+      radius: 0,
       fill: {
-        topLeft: UI_THEME.cardHighlightNumber,
-        topRight: UI_THEME.cardHighlightNumber,
-        bottomLeft: UI_THEME.cardNumber,
-        bottomRight: UI_THEME.cardNumber,
+        topLeft: UI_THEME.backgroundNumber,
+        topRight: UI_THEME.backgroundNumber,
+        bottomLeft: UI_THEME.backgroundNumber,
+        bottomRight: UI_THEME.backgroundNumber,
         alpha: 1,
       },
       stroke: {
-        width: 4,
+        width: 2,
+        color: UI_THEME.surfaceStrongNumber,
+        alpha: 1,
+      },
+      shadow: {
+        offsetX: 0,
+        offsetY: 10,
         color: UI_THEME.textNumber,
-        alpha: 0.95,
+        alpha: 0.16,
       },
     });
 
-    for (const circle of circles) {
-      const x = board.x + circle.xRatio * board.width;
-      const y = board.y + circle.yRatio * board.height;
-      drawPlayerCircle(this.boardGraphics, {
+    const inset = 8;
+
+    for (const cell of this.gridCells) {
+      const centerX = gameLayout.boardRect.x + gameLayout.cellSize * (cell.x + 0.5);
+      const centerY = gameLayout.boardRect.y + gameLayout.cellSize * (cell.y + 0.5);
+      const boardCell = board[cell.y * CAT_MATCH_BOARD_SIZE + cell.x];
+      const hovered = this.hoveredCellKey === `${cell.x}:${cell.y}`;
+      const selectable = canPlay && !boardCell && this.selectedHandIndex !== null;
+      const fillColor = hovered && selectable ? 0xfff7de : UI_THEME.backgroundNumber;
+
+      cell.tile.setVisible(this.visible);
+      cell.tile.setPosition(centerX, centerY);
+      cell.tile.setSize(gameLayout.cellSize - inset, gameLayout.cellSize - inset);
+      cell.tile.setFillStyle(fillColor, 1);
+      if (boardCell) {
+        cell.tile.setStrokeStyle();
+      } else {
+        cell.tile.setStrokeStyle(
+          hovered && selectable ? 3 : 2,
+          UI_THEME.surfaceStrongNumber,
+          1,
+        );
+      }
+
+      if (boardCell) {
+        const textureKey = getPlayerCatBaseTexture(this.scene, boardCell.playerID);
+        const animationKey = getPlayerCatAnimationKey(this.scene, boardCell.playerID);
+        if (cell.card.sprite.texture.key !== textureKey) {
+          cell.card.sprite.setTexture(textureKey);
+        }
+        if (cell.card.sprite.anims.currentAnim?.key !== animationKey) {
+          cell.card.sprite.play(animationKey);
+        }
+        renderCatCard(cell.card, {
+          x: centerX,
+          y: centerY,
+          visible: this.visible,
+          interactive: false,
+          cardSize: gameLayout.cellSize - 14,
+          spriteScale: Math.min((gameLayout.cellSize - 36) / 64, 1),
+        });
+      } else {
+        cell.card.container.setVisible(false);
+      }
+    }
+  }
+
+  private drawHand(
+    gameLayout: ComputedGameLayout,
+    hand: Array<number | null>,
+    playerID: string,
+    canPlay: boolean,
+  ) {
+    const textureKey = getPlayerCatBaseTexture(this.scene, playerID);
+    const animationKey = getPlayerCatAnimationKey(this.scene, playerID);
+    const gap = 18;
+    const cardSize = 98;
+
+    for (let handIndex = 0; handIndex < this.handCards.length; handIndex += 1) {
+      const card = this.handCards[handIndex];
+      const cardID = hand[handIndex] ?? null;
+      const x = gameLayout.handStartX + handIndex * (cardSize + gap);
+
+      if (card.sprite.texture.key !== textureKey) {
+        card.sprite.setTexture(textureKey);
+      }
+      if (card.sprite.anims.currentAnim?.key !== animationKey) {
+        card.sprite.play(animationKey);
+      }
+
+      renderCatCard(card, {
         x,
-        y,
-        radius: 18,
-        fillColor: PLAYER_COLORS[circle.playerID] ?? 0xffffff,
-        fillAlpha: 0.95,
-        strokeColor: UI_THEME.backgroundNumber,
-        strokeWidth: 2,
-        strokeAlpha: 0.8,
+        y: gameLayout.handY,
+        visible: this.visible,
+        selected: this.selectedHandIndex === handIndex,
+        hovered: this.hoveredHandIndex === handIndex && cardID !== null,
+        disabled: !canPlay || cardID === null,
       });
     }
+  }
+
+  private canLocalPlayerMove(state: RoomControllerState) {
+    return Boolean(
+      state.session &&
+        state.snapshot?.phase === 'game' &&
+        state.gameState?.isConnected &&
+        state.gameState?.ctx?.currentPlayer === state.session.playerID &&
+        !state.gameState?.G?.matchResult,
+    );
+  }
+
+  private getGameLayout(roomLayout: RoomLayout): ComputedGameLayout {
+    const handHeight = 150;
+    const boardSize = Math.max(300, Math.min(roomLayout.board.width, roomLayout.board.height - handHeight));
+    const boardRect = new Phaser.Geom.Rectangle(
+      roomLayout.centerX - boardSize / 2,
+      roomLayout.board.y + 6,
+      boardSize,
+      boardSize,
+    );
+    const totalHandWidth = CAT_MATCH_HAND_SIZE * 98 + (CAT_MATCH_HAND_SIZE - 1) * 18;
+
+    return {
+      boardRect,
+      cellSize: boardSize / CAT_MATCH_BOARD_SIZE,
+      handY: boardRect.bottom + 82,
+      handStartX: roomLayout.centerX - totalHandWidth / 2 + 49,
+    };
+  }
+
+  private rerender() {
+    if (!this.visible || !this.lastLayout) {
+      return;
+    }
+
+    const state = this.deps.controller.getState();
+    this.render(this.lastLayout, state.snapshot, state);
   }
 }

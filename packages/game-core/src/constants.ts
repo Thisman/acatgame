@@ -1,6 +1,10 @@
 export const CLICK_RACE_GAME_NAME = 'click-race';
 export const CLICK_RACE_NUM_PLAYERS = 2;
-export const CIRCLES_TO_WIN = 7;
+export const CAT_MATCH_BOARD_SIZE = 7;
+export const CAT_MATCH_WIN_LENGTH = 4;
+export const CAT_MATCH_HAND_SIZE = 5;
+export const CAT_MATCH_MAX_ROUNDS = 3;
+export const CAT_MATCH_ROUNDS_TO_WIN = 2;
 export const READY_CARD_POOL_SIZE = 24;
 export const READY_CARD_SELECTION_LIMIT = 15;
 export const READY_CARD_COLUMNS = 6;

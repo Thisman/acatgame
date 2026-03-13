@@ -3,39 +3,83 @@ import { CAT_SPRITE_ANIMATION_FRAMES, CAT_SPRITE_FRAME_SIZE } from '@acatgame/ga
 
 import { UI_THEME } from './theme.js';
 
-export const READY_CARD_SPRITESHEET_KEY = 'ready-card-cat-sheet';
-export const READY_CARD_ANIMATION_KEY = 'ready-card-cat-idle';
+export const PLAYER_CAT_SPRITESHEET_KEYS = {
+  '0': 'player-cat-sheet-0',
+  '1': 'player-cat-sheet-1',
+} as const;
+
+export const PLAYER_CAT_ANIMATION_KEYS = {
+  '0': 'player-cat-idle-0',
+  '1': 'player-cat-idle-1',
+} as const;
+
+const PLAYER_CAT_SOURCES = {
+  '0': 'assets/cat-sheet.png',
+  '1': 'assets/cat-sheet-orange.png',
+} as const;
+
 const READY_CARD_FALLBACK_PREFIX = 'ready-card-fallback-';
 
+export const READY_CARD_SPRITESHEET_KEY = PLAYER_CAT_SPRITESHEET_KEYS['0'];
+export const READY_CARD_ANIMATION_KEY = PLAYER_CAT_ANIMATION_KEYS['0'];
+
 export function preloadReadyCardAssets(scene: Phaser.Scene) {
-  scene.load.spritesheet(READY_CARD_SPRITESHEET_KEY, 'assets/cat-sheet.png', {
-    frameWidth: CAT_SPRITE_FRAME_SIZE,
-    frameHeight: CAT_SPRITE_FRAME_SIZE,
-  });
+  for (const playerID of Object.keys(PLAYER_CAT_SOURCES) as Array<keyof typeof PLAYER_CAT_SOURCES>) {
+    scene.load.spritesheet(PLAYER_CAT_SPRITESHEET_KEYS[playerID], PLAYER_CAT_SOURCES[playerID], {
+      frameWidth: CAT_SPRITE_FRAME_SIZE,
+      frameHeight: CAT_SPRITE_FRAME_SIZE,
+    });
+  }
 }
 
 export function ensureReadyCardAnimation(scene: Phaser.Scene) {
-  if (scene.anims.exists(READY_CARD_ANIMATION_KEY)) {
-    return;
+  ensurePlayerCatAnimations(scene);
+}
+
+export function ensurePlayerCatAnimations(scene: Phaser.Scene) {
+  createFallbackFrames(scene);
+
+  for (const playerID of Object.keys(PLAYER_CAT_ANIMATION_KEYS) as Array<keyof typeof PLAYER_CAT_ANIMATION_KEYS>) {
+    const animationKey = PLAYER_CAT_ANIMATION_KEYS[playerID];
+
+    if (scene.anims.exists(animationKey)) {
+      continue;
+    }
+
+    const spritesheetKey = PLAYER_CAT_SPRITESHEET_KEYS[playerID];
+    const frames = scene.textures.exists(spritesheetKey)
+      ? scene.anims.generateFrameNumbers(spritesheetKey, {
+          start: 0,
+          end: CAT_SPRITE_ANIMATION_FRAMES - 1,
+        })
+      : createFallbackFrames(scene).map((key) => ({ key }));
+
+    scene.anims.create({
+      key: animationKey,
+      frames,
+      frameRate: 8,
+      repeat: -1,
+    });
   }
-
-  const frames = scene.textures.exists(READY_CARD_SPRITESHEET_KEY)
-    ? scene.anims.generateFrameNumbers(READY_CARD_SPRITESHEET_KEY, {
-        start: 0,
-        end: CAT_SPRITE_ANIMATION_FRAMES - 1,
-      })
-    : createFallbackFrames(scene).map((key) => ({ key }));
-
-  scene.anims.create({
-    key: READY_CARD_ANIMATION_KEY,
-    frames,
-    frameRate: 8,
-    repeat: -1,
-  });
 }
 
 export function getReadyCardBaseTexture(scene: Phaser.Scene) {
-  return scene.textures.exists(READY_CARD_SPRITESHEET_KEY) ? READY_CARD_SPRITESHEET_KEY : `${READY_CARD_FALLBACK_PREFIX}0`;
+  return getPlayerCatBaseTexture(scene, '0');
+}
+
+export function getPlayerCatBaseTexture(scene: Phaser.Scene, playerID: string) {
+  const textureKey = PLAYER_CAT_SPRITESHEET_KEYS[playerID as keyof typeof PLAYER_CAT_SPRITESHEET_KEYS];
+
+  if (textureKey && scene.textures.exists(textureKey)) {
+    return textureKey;
+  }
+
+  return `${READY_CARD_FALLBACK_PREFIX}0`;
+}
+
+export function getPlayerCatAnimationKey(scene: Phaser.Scene, playerID: string) {
+  ensurePlayerCatAnimations(scene);
+  return PLAYER_CAT_ANIMATION_KEYS[playerID as keyof typeof PLAYER_CAT_ANIMATION_KEYS] ?? READY_CARD_ANIMATION_KEY;
 }
 
 function createFallbackFrames(scene: Phaser.Scene) {
