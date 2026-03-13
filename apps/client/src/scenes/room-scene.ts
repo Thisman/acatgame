@@ -82,7 +82,7 @@ export class RoomScene extends Phaser.Scene {
     this.unsubscribe = roomController.subscribe(() => this.renderView());
     this.unsubscribeI18n = i18n.subscribe(() => this.renderView());
 
-    void roomController.refreshSnapshot();
+    void roomController.refreshSnapshot().catch(() => {});
     this.renderView();
   }
 
@@ -195,6 +195,12 @@ export class RoomScene extends Phaser.Scene {
   private renderView() {
     const roomLayout = layout.getRoomLayout(this);
     const state = roomController.getState();
+
+    if (state.needsLobbyRedirect && roomController.consumeLobbyRedirect()) {
+      this.scene.start('LobbyScene');
+      return;
+    }
+
     const snapshot = state.snapshot;
     const phase = snapshot?.phase ?? 'waiting';
 

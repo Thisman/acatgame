@@ -8,6 +8,7 @@
   "actions": {
     "createRoom": "Создать комнату",
     "joinRoom": "Войти в комнату",
+    "findRoom": "Найти комнату",
     "copyCode": "Скопировать код",
     "copied": "Скопировано",
     "copyFailed": "Не удалось скопировать",
@@ -18,7 +19,9 @@
   "lobby": {
     "title": "ACatGame",
     "subtitle": "Создай комнату или войди по коду",
-    "roomCodePlaceholder": "Код комнаты"
+    "roomCodePlaceholder": "Код комнаты",
+    "findRoomTitle": "Доступные комнаты",
+    "noAvailableRooms": "Сейчас нет доступных комнат."
   },
   "waiting": {
     "loadingRoom": "Загрузка комнаты...",
@@ -85,6 +88,7 @@
     "room_code_required": "Нужно ввести код комнаты.",
     "room_closed": "Комната уже закрыта.",
     "room_full": "Комната уже заполнена.",
+    "room_unavailable": "Комната больше недоступна.",
     "room_waiting_for_players": "Комната всё ещё ждёт игроков.",
     "ready_change_forbidden": "Сейчас нельзя менять готовность.",
     "ready_selection_invalid": "Выбор карточек некорректен.",

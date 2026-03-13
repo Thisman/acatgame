@@ -8,6 +8,7 @@
   "actions": {
     "createRoom": "Create room",
     "joinRoom": "Join room",
+    "findRoom": "Find room",
     "copyCode": "Copy code",
     "copied": "Copied",
     "copyFailed": "Copy failed",
@@ -18,7 +19,9 @@
   "lobby": {
     "title": "ACatGame",
     "subtitle": "Create a room or join by code",
-    "roomCodePlaceholder": "Room code"
+    "roomCodePlaceholder": "Room code",
+    "findRoomTitle": "Available rooms",
+    "noAvailableRooms": "No rooms are available right now."
   },
   "waiting": {
     "loadingRoom": "Loading room...",
@@ -85,6 +88,7 @@
     "room_code_required": "Room code is required.",
     "room_closed": "Room is closed.",
     "room_full": "Room is full.",
+    "room_unavailable": "Room is no longer available.",
     "room_waiting_for_players": "Room is still waiting for players.",
     "ready_change_forbidden": "Ready state cannot be changed now.",
     "ready_selection_invalid": "Selected cards are invalid.",

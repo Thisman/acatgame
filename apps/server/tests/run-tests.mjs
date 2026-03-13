@@ -232,4 +232,75 @@ const finalSnapshot = await gameRoomService.getRoomSnapshot('match-4');
 assert.equal(finalSnapshot.phase, 'gameover');
 assert.deepEqual(finalSnapshot.matchResult, { winner: null, draw: true });
 
+const availabilityRegistry = new RoomRegistry(10_000);
+availabilityRegistry.storeSession({
+  matchID: 'match-available',
+  playerID: '0',
+  credentials: 'secret-0',
+  seat: 0,
+});
+availabilityRegistry.storeSession({
+  matchID: 'match-full',
+  playerID: '0',
+  credentials: 'secret-0',
+  seat: 0,
+});
+availabilityRegistry.storeSession({
+  matchID: 'match-started',
+  playerID: '0',
+  credentials: 'secret-0',
+  seat: 0,
+});
+availabilityRegistry.storeSession({
+  matchID: 'match-closed',
+  playerID: '0',
+  credentials: 'secret-0',
+  seat: 0,
+});
+availabilityRegistry.setGameStarted('match-started', true);
+availabilityRegistry.markClosed('match-closed');
+
+const availabilityService = new RoomService('http://localhost:8000', availabilityRegistry, {
+  fetch: async () => ({}),
+});
+
+availabilityService.lobbyClient = {
+  getMatch: async (_gameName, matchID) => {
+    if (matchID === 'match-available' || matchID === 'match-started' || matchID === 'match-closed') {
+      return {
+        players: [{ id: 0, name: 'Player 1' }],
+      };
+    }
+
+    if (matchID === 'match-full') {
+      return {
+        players: [
+          { id: 0, name: 'Player 1' },
+          { id: 1, name: 'Player 2' },
+        ],
+      };
+    }
+
+    return {
+      players: [],
+    };
+  },
+  joinMatch: async (_gameName, _matchID, { playerID }) => ({
+    playerCredentials: `cred-${playerID}`,
+  }),
+};
+
+const availableRooms = await availabilityService.listAvailableRooms();
+assert.deepEqual(availableRooms, [{ matchID: 'match-available' }]);
+
+await assert.rejects(
+  () => availabilityService.joinRoom('match-started'),
+  (error) => error instanceof HttpError && error.code === 'room_unavailable',
+);
+
+await assert.rejects(
+  () => availabilityService.joinRoom('match-full'),
+  (error) => error instanceof HttpError && error.code === 'room_unavailable',
+);
+
 console.log('server tests passed');

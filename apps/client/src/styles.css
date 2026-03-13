@@ -83,6 +83,16 @@ canvas {
   box-shadow: 0 10px 0 var(--ui-surface-strong), 0 22px 34px var(--ui-shadow-strong);
 }
 
+.ui-card--rooms-popup {
+  align-items: stretch;
+  width: min(680px, calc(100vw - 48px));
+  max-height: 80vh;
+  padding: 28px 30px;
+  border-radius: 24px;
+  background: rgba(255, 250, 231, 0.98);
+  box-shadow: 0 10px 0 var(--ui-surface-strong), 0 22px 34px var(--ui-shadow-strong);
+}
+
 .ui-title {
   margin: 0;
   color: var(--ui-text);
@@ -294,6 +304,97 @@ canvas {
 .ui-result-hint,
 .ui-result-error {
   max-width: 100%;
+}
+
+.ui-popup-backdrop {
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: rgba(92, 75, 81, 0.28);
+  pointer-events: auto;
+}
+
+.ui-room-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+
+.ui-room-popup-title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: clamp(24px, 2.8vw, 32px);
+  text-align: left;
+}
+
+.ui-room-popup-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+  box-sizing: border-box;
+}
+
+.ui-room-popup-spinner {
+  align-self: center;
+  margin-top: 18px;
+}
+
+.ui-room-popup-empty,
+.ui-room-popup-error {
+  width: 100%;
+}
+
+.ui-room-popup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+.ui-room-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 18px 20px;
+  border-radius: 20px;
+  background: rgba(140, 190, 178, 0.2);
+  box-sizing: border-box;
+}
+
+.ui-room-list-code {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: clamp(24px, 2.6vw, 30px);
+  text-align: left;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .ui-room-list-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ui-room-popup-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ui-room-popup-title {
+    text-align: center;
+  }
 }
 
 @keyframes ui-spin {

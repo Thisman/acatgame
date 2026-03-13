@@ -70,6 +70,10 @@ export interface RoomSession {
   seat: number;
 }
 
+export interface AvailableRoomSummary {
+  matchID: string;
+}
+
 export interface RoomSnapshot {
   matchID: string;
   status: RoomStatus;

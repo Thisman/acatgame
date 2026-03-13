@@ -1,4 +1,5 @@
 import {
+  type AvailableRoomSummary,
   CLICK_RACE_NUM_PLAYERS,
   ClickRaceGame,
   type ClickRaceClientState,
@@ -29,12 +30,21 @@ export interface RoomControllerState {
   snapshot: RoomSnapshot | null;
   gameState: BoardgameState | null;
   error: UiError | null;
+  needsLobbyRedirect: boolean;
 }
 
 interface RequestOptions {
   method?: string;
   body?: unknown;
 }
+
+const TERMINAL_ROOM_ERROR_CODES = new Set([
+  'room_closed',
+  'room_full',
+  'room_not_found',
+  'room_unavailable',
+  'invalid_room_session',
+]);
 
 export class RoomController {
   private readonly listeners = new Set<() => void>();
@@ -44,6 +54,7 @@ export class RoomController {
   private snapshot: RoomSnapshot | null = null;
   private gameState: BoardgameState | null = null;
   private error: UiError | null = null;
+  private needsLobbyRedirect = false;
   private heartbeatTimer: number | null = null;
   private snapshotTimer: number | null = null;
 
@@ -60,6 +71,7 @@ export class RoomController {
       snapshot: this.snapshot,
       gameState: this.gameState,
       error: this.error,
+      needsLobbyRedirect: this.needsLobbyRedirect,
     };
   }
 
@@ -82,6 +94,10 @@ export class RoomController {
       method: 'POST',
     });
     await this.connect(session);
+  }
+
+  async listAvailableRooms() {
+    return this.request<AvailableRoomSummary[]>('/api/rooms/available');
   }
 
   async leaveRoom() {
@@ -177,7 +193,14 @@ export class RoomController {
     this.snapshot = null;
     this.gameState = null;
     this.error = null;
+    this.needsLobbyRedirect = false;
     this.emit();
+  }
+
+  consumeLobbyRedirect() {
+    const shouldRedirect = this.needsLobbyRedirect;
+    this.needsLobbyRedirect = false;
+    return shouldRedirect;
   }
 
   private async connect(session: RoomSession) {
@@ -191,8 +214,8 @@ export class RoomController {
     this.bgioClient = null;
     this.bgioStarted = false;
 
-    await this.refreshSnapshot();
     await this.sendPresence();
+
     this.startNetworking();
   }
 
@@ -200,11 +223,11 @@ export class RoomController {
     this.stopNetworking();
 
     this.heartbeatTimer = window.setInterval(() => {
-      void this.sendPresence();
+      void this.sendPresence().catch(() => {});
     }, 4_000);
 
     this.snapshotTimer = window.setInterval(() => {
-      void this.refreshSnapshot();
+      void this.refreshSnapshot().catch(() => {});
     }, 2_500);
   }
 
@@ -230,12 +253,17 @@ export class RoomController {
       credentials: this.session.credentials,
     };
 
-    this.snapshot = await this.request<RoomSnapshot>(`/api/rooms/${this.session.matchID}/presence`, {
-      method: 'POST',
-      body,
-    });
-    await this.syncBoardClient();
-    this.emit();
+    try {
+      this.snapshot = await this.request<RoomSnapshot>(`/api/rooms/${this.session.matchID}/presence`, {
+        method: 'POST',
+        body,
+      });
+      await this.syncBoardClient();
+      this.emit();
+    } catch (error) {
+      this.handleTerminalRoomError(error);
+      throw error;
+    }
   }
 
   private async syncBoardClient() {
@@ -301,6 +329,23 @@ export class RoomController {
 
     this.error = null;
     return (await response.json()) as T;
+  }
+
+  private handleTerminalRoomError(error: unknown) {
+    if (!(error instanceof UiError) || !TERMINAL_ROOM_ERROR_CODES.has(error.code ?? '')) {
+      return;
+    }
+
+    this.stopNetworking();
+    this.bgioClient?.stop?.();
+    this.bgioClient = null;
+    this.bgioStarted = false;
+    this.session = null;
+    this.snapshot = null;
+    this.gameState = null;
+    this.error = error;
+    this.needsLobbyRedirect = true;
+    this.emit();
   }
 
   private emit() {

@@ -1,6 +1,7 @@
 export const ERROR_CODES = {
   ROOM_CLOSED: 'room_closed',
   ROOM_FULL: 'room_full',
+  ROOM_UNAVAILABLE: 'room_unavailable',
   ROOM_WAITING_FOR_PLAYERS: 'room_waiting_for_players',
   READY_CHANGE_FORBIDDEN: 'ready_change_forbidden',
   READY_SELECTION_INVALID: 'ready_selection_invalid',

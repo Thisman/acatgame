@@ -1,4 +1,5 @@
 import {
+  type AvailableRoomSummary,
   CAT_MATCH_BOARD_SIZE,
   CLICK_RACE_GAME_NAME,
   CLICK_RACE_NUM_PLAYERS,
@@ -52,6 +53,16 @@ type StorageRecord = {
   initialState?: StoredMatchState;
 };
 
+type RoomAvailability =
+  | {
+      status: 'available';
+      metadata: MatchMetadata;
+      seat: number;
+    }
+  | {
+      status: 'closed' | 'not_found' | 'unavailable';
+    };
+
 export class HttpError extends Error {
   constructor(
     readonly statusCode: number,
@@ -98,17 +109,40 @@ export class RoomService {
     return session;
   }
 
+  async listAvailableRooms(): Promise<AvailableRoomSummary[]> {
+    const availableRooms: AvailableRoomSummary[] = [];
+
+    for (const matchID of this.registry.listMatchIDs()) {
+      const availability = await this.getRoomAvailability(matchID);
+
+      if (availability.status === 'available') {
+        availableRooms.push({ matchID });
+      }
+    }
+
+    return availableRooms;
+  }
+
   async joinRoom(matchID: string): Promise<RoomSession> {
-    if (this.registry.isClosed(matchID)) {
+    const availability = await this.getRoomAvailability(matchID);
+
+    if (availability.status === 'closed') {
       throw new HttpError(410, ERROR_CODES.ROOM_CLOSED, 'Room is closed.');
     }
 
-    const metadata = await this.getMetadata(matchID);
-    const seat = this.getNextAvailableSeat(metadata);
-
-    if (seat === null) {
-      throw new HttpError(409, ERROR_CODES.ROOM_FULL, 'Room is full.');
+    if (availability.status === 'not_found') {
+      throw new HttpError(404, ERROR_CODES.ROOM_NOT_FOUND, 'Room not found.');
     }
+
+    if (availability.status === 'unavailable') {
+      throw new HttpError(409, ERROR_CODES.ROOM_UNAVAILABLE, 'Room is unavailable.');
+    }
+
+    if (availability.status !== 'available') {
+      throw new HttpError(500, ERROR_CODES.INTERNAL_SERVER_ERROR, 'Internal server error.');
+    }
+
+    const { seat } = availability;
 
     const { playerCredentials } = await this.wrapLobbyError(() =>
       this.lobbyClient.joinMatch(CLICK_RACE_GAME_NAME, matchID, {
@@ -403,6 +437,40 @@ export class RoomService {
     }
 
     return null;
+  }
+
+  private async getRoomAvailability(matchID: string): Promise<RoomAvailability> {
+    if (this.registry.isClosed(matchID)) {
+      return { status: 'closed' };
+    }
+
+    if (this.registry.hasGameStarted(matchID)) {
+      return { status: 'unavailable' };
+    }
+
+    let metadata: MatchMetadata;
+
+    try {
+      metadata = await this.getMetadata(matchID);
+    } catch (error) {
+      if (error instanceof HttpError && error.code === ERROR_CODES.ROOM_NOT_FOUND) {
+        return { status: 'not_found' };
+      }
+
+      throw error;
+    }
+
+    const seat = this.getNextAvailableSeat(metadata);
+
+    if (seat === null) {
+      return { status: 'unavailable' };
+    }
+
+    return {
+      status: 'available',
+      metadata,
+      seat,
+    };
   }
 
   private buildReadyState(matchID: string): Record<string, boolean> {

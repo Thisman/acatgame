@@ -129,4 +129,8 @@ export class RoomRegistry {
   hasGameStarted(matchID: string): boolean {
     return this.rooms.get(matchID)?.gameStarted ?? false;
   }
+
+  listMatchIDs(): string[] {
+    return [...this.rooms.keys()];
+  }
 }

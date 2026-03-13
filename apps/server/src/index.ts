@@ -74,6 +74,10 @@ server.router.post('/api/rooms', async (ctx) => {
   await respond(ctx, () => roomService.createRoom());
 });
 
+server.router.get('/api/rooms/available', async (ctx) => {
+  await respond(ctx, () => roomService.listAvailableRooms());
+});
+
 server.router.get('/api/rooms/:matchID', async (ctx) => {
   await respond(ctx, () => roomService.getRoomSnapshot(ctx.params.matchID));
 });
