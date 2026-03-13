@@ -3,11 +3,19 @@ import {
   CAT_MATCH_BOARD_SIZE,
   CAT_MATCH_HAND_SIZE,
   type BoardCell,
+  type BoardCellEffect,
   type RoomSnapshot,
 } from '@acatgame/game-core';
 
+import {
+  getCardTooltipContent,
+  getPlacementLockEffect,
+  normalizeCellEffects,
+  previewCellEffectsForPlacement,
+} from '../card-ui.js';
 import type { RoomLayout } from '../layout.js';
 import {
+  getCardAnimationKey,
   getPlayerCatAnimationKey,
   getPlayerCatBaseTexture,
 } from '../ready-card-assets.js';
@@ -27,6 +35,7 @@ interface GridCellView {
   y: number;
   tile: Phaser.GameObjects.Rectangle;
   card: CatCardView;
+  lockLabel: Phaser.GameObjects.Text;
 }
 
 interface ComputedGameLayout {
@@ -76,11 +85,31 @@ export class GamePhaseView {
           id: y * CAT_MATCH_BOARD_SIZE + x,
           textureKey: getPlayerCatBaseTexture(this.scene, '0'),
           animationKey: getPlayerCatAnimationKey(this.scene, '0'),
-          interactive: false,
+          onHover: () => {
+            this.hoveredCellKey = `${x}:${y}`;
+            this.rerender();
+          },
+          onOut: () => {
+            if (this.hoveredCellKey === `${x}:${y}`) {
+              this.hoveredCellKey = null;
+              this.rerender();
+            }
+          },
         });
         card.container.setVisible(false);
+        const lockLabel = this.scene.add.text(0, 0, '', {
+          fontFamily: 'Trebuchet MS',
+          fontSize: '24px',
+          fontStyle: '700',
+          color: '#F06060',
+          stroke: '#FFF7DE',
+          strokeThickness: 4,
+        });
+        lockLabel.setOrigin(0.5);
+        lockLabel.setVisible(false);
+        lockLabel.setDepth(15);
 
-        this.gridCells.push({ x, y, tile, card });
+        this.gridCells.push({ x, y, tile, card, lockLabel });
       }
     }
 
@@ -127,6 +156,7 @@ export class GamePhaseView {
     for (const cell of this.gridCells) {
       cell.tile.setVisible(false);
       cell.card.container.setVisible(false);
+      cell.lockLabel.setVisible(false);
     }
 
     for (const card of this.handCards) {
@@ -149,6 +179,7 @@ export class GamePhaseView {
     for (const cell of this.gridCells) {
       cell.tile.destroy();
       cell.card.container.destroy(true);
+      cell.lockLabel.destroy();
     }
 
     for (const card of this.handCards) {
@@ -162,6 +193,11 @@ export class GamePhaseView {
     }
 
     const state = this.deps.controller.getState();
+
+    if (!this.canLocalPlayerMove(state)) {
+      return;
+    }
+
     const hand = state.gameState?.G?.localPlayer?.hand ?? [];
     const cardID = hand[handIndex] ?? null;
 
@@ -185,8 +221,13 @@ export class GamePhaseView {
     }
 
     const board = state.gameState?.G?.board ?? state.snapshot?.board ?? [];
+    const cellEffects = previewCellEffectsForPlacement(state.gameState?.G?.cellEffects ?? state.snapshot?.cellEffects);
 
     if (board[cellY * CAT_MATCH_BOARD_SIZE + cellX]) {
+      return;
+    }
+
+    if (getPlacementLockEffect(cellEffects[cellY * CAT_MATCH_BOARD_SIZE + cellX])) {
       return;
     }
 
@@ -198,20 +239,29 @@ export class GamePhaseView {
 
   private render(roomLayout: RoomLayout, snapshot: RoomSnapshot | null, state: RoomControllerState) {
     const board = state.gameState?.G?.board ?? snapshot?.board ?? [];
+    const rawCellEffects = state.gameState?.G?.cellEffects ?? snapshot?.cellEffects ?? [];
     const hand = state.gameState?.G?.localPlayer?.hand ?? [];
     const sessionPlayerID = state.session?.playerID ?? '0';
     const gameLayout = this.getGameLayout(roomLayout);
     const canPlay = this.canLocalPlayerMove(state);
+    const cellEffects = canPlay
+      ? previewCellEffectsForPlacement(rawCellEffects)
+      : normalizeCellEffects(rawCellEffects);
 
     if (this.selectedHandIndex !== null && hand[this.selectedHandIndex] === null) {
       this.selectedHandIndex = null;
     }
 
-    this.drawBoard(gameLayout, board, canPlay);
+    this.drawBoard(gameLayout, board, cellEffects, canPlay);
     this.drawHand(gameLayout, hand, sessionPlayerID, canPlay);
   }
 
-  private drawBoard(gameLayout: ComputedGameLayout, board: Array<BoardCell | null>, canPlay: boolean) {
+  private drawBoard(
+    gameLayout: ComputedGameLayout,
+    board: Array<BoardCell | null>,
+    cellEffects: Array<BoardCellEffect[]>,
+    canPlay: boolean,
+  ) {
     this.boardGraphics.clear();
     drawBoardSurface(this.boardGraphics, {
       rect: gameLayout.boardRect,
@@ -241,10 +291,17 @@ export class GamePhaseView {
     for (const cell of this.gridCells) {
       const centerX = gameLayout.boardRect.x + gameLayout.cellSize * (cell.x + 0.5);
       const centerY = gameLayout.boardRect.y + gameLayout.cellSize * (cell.y + 0.5);
-      const boardCell = board[cell.y * CAT_MATCH_BOARD_SIZE + cell.x];
+      const boardIndex = cell.y * CAT_MATCH_BOARD_SIZE + cell.x;
+      const boardCell = board[boardIndex];
+      const placementLock = getPlacementLockEffect(cellEffects[boardIndex]);
+      const blocked = !boardCell && Boolean(placementLock);
       const hovered = this.hoveredCellKey === `${cell.x}:${cell.y}`;
-      const selectable = canPlay && !boardCell && this.selectedHandIndex !== null;
-      const fillColor = hovered && selectable ? 0xfff7de : UI_THEME.backgroundNumber;
+      const selectable = canPlay && !boardCell && !blocked && this.selectedHandIndex !== null;
+      const fillColor = blocked
+        ? 0xf8d8ac
+        : hovered && selectable
+          ? 0xfff7de
+          : UI_THEME.backgroundNumber;
 
       cell.tile.setVisible(this.visible);
       cell.tile.setPosition(centerX, centerY);
@@ -254,15 +311,16 @@ export class GamePhaseView {
         cell.tile.setStrokeStyle();
       } else {
         cell.tile.setStrokeStyle(
-          hovered && selectable ? 3 : 2,
-          UI_THEME.surfaceStrongNumber,
+          blocked ? 3 : hovered && selectable ? 3 : 2,
+          blocked ? UI_THEME.accentBorderNumber : UI_THEME.surfaceStrongNumber,
           1,
         );
       }
 
       if (boardCell) {
         const textureKey = getPlayerCatBaseTexture(this.scene, boardCell.playerID);
-        const animationKey = getPlayerCatAnimationKey(this.scene, boardCell.playerID);
+        const animationKey = getCardAnimationKey(this.scene, boardCell.playerID, boardCell.cardID);
+        const tooltipContent = getCardTooltipContent(boardCell.cardID);
         if (cell.card.sprite.texture.key !== textureKey) {
           cell.card.sprite.setTexture(textureKey);
         }
@@ -273,12 +331,21 @@ export class GamePhaseView {
           x: centerX,
           y: centerY,
           visible: this.visible,
-          interactive: false,
+          interactive: true,
           cardSize: gameLayout.cellSize - 14,
           spriteScale: Math.min((gameLayout.cellSize - 36) / 64, 1),
+          hovered,
+          tooltipTitle: tooltipContent.title,
+          tooltipText: tooltipContent.text,
         });
       } else {
         cell.card.container.setVisible(false);
+      }
+
+      cell.lockLabel.setVisible(this.visible && blocked);
+      if (blocked) {
+        cell.lockLabel.setPosition(centerX, centerY);
+        cell.lockLabel.setText(String(placementLock?.remainingTurns ?? ''));
       }
     }
   }
@@ -290,7 +357,6 @@ export class GamePhaseView {
     canPlay: boolean,
   ) {
     const textureKey = getPlayerCatBaseTexture(this.scene, playerID);
-    const animationKey = getPlayerCatAnimationKey(this.scene, playerID);
     const gap = 18;
     const cardSize = 98;
 
@@ -298,6 +364,7 @@ export class GamePhaseView {
       const card = this.handCards[handIndex];
       const cardID = hand[handIndex] ?? null;
       const x = gameLayout.handStartX + handIndex * (cardSize + gap);
+      const animationKey = getCardAnimationKey(this.scene, playerID, cardID);
 
       if (card.sprite.texture.key !== textureKey) {
         card.sprite.setTexture(textureKey);
@@ -306,6 +373,8 @@ export class GamePhaseView {
         card.sprite.play(animationKey);
       }
 
+      const tooltipContent = cardID === null ? null : getCardTooltipContent(cardID);
+
       renderCatCard(card, {
         x,
         y: gameLayout.handY,
@@ -313,6 +382,9 @@ export class GamePhaseView {
         selected: this.selectedHandIndex === handIndex,
         hovered: this.hoveredHandIndex === handIndex && cardID !== null,
         disabled: !canPlay || cardID === null,
+        interactive: cardID !== null,
+        tooltipTitle: tooltipContent?.title,
+        tooltipText: tooltipContent?.text,
       });
     }
   }

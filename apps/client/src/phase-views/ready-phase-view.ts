@@ -6,8 +6,10 @@ import {
   type RoomSnapshot,
 } from '@acatgame/game-core';
 
+import { getCardTooltipContent } from '../card-ui.js';
 import type { RoomLayout } from '../layout.js';
 import {
+  getCardAnimationKey,
   getPlayerCatAnimationKey,
   getPlayerCatBaseTexture,
 } from '../ready-card-assets.js';
@@ -101,7 +103,6 @@ export class ReadyPhaseView {
     const readyLocked = !!(session && snapshot?.readyByPlayer[session.playerID]);
     const selectionLimitReached = selectedCardIDs.length >= READY_CARD_SELECTION_LIMIT;
     const textureKey = getPlayerCatBaseTexture(this.scene, session?.playerID ?? '0');
-    const animationKey = getPlayerCatAnimationKey(this.scene, session?.playerID ?? '0');
 
     const rows = Math.ceil(READY_CARD_POOL_SIZE / READY_CARD_COLUMNS);
     const cardSize = 98;
@@ -116,8 +117,9 @@ export class ReadyPhaseView {
       if (card.sprite.texture.key !== textureKey) {
         card.sprite.setTexture(textureKey);
       }
-      if (card.sprite.anims.currentAnim?.key !== animationKey) {
-        card.sprite.play(animationKey);
+      const cardAnimationKey = getCardAnimationKey(this.scene, session?.playerID ?? '0', card.id);
+      if (card.sprite.anims.currentAnim?.key !== cardAnimationKey) {
+        card.sprite.play(cardAnimationKey);
       }
 
       const column = card.id % READY_CARD_COLUMNS;
@@ -127,6 +129,7 @@ export class ReadyPhaseView {
       const isSelected = selectedCardIDSet.has(card.id);
       const canSelect = !readyLocked && (isSelected || !selectionLimitReached);
 
+      const tooltipContent = getCardTooltipContent(card.id);
       renderCatCard(card, {
         x,
         y,
@@ -134,6 +137,9 @@ export class ReadyPhaseView {
         selected: isSelected,
         hovered: this.hoveredCardID === card.id && canSelect,
         disabled: !canSelect,
+        interactive: true,
+        tooltipTitle: tooltipContent.title,
+        tooltipText: tooltipContent.text,
       });
     }
   }

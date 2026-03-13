@@ -93,6 +93,7 @@ assert.deepEqual(initialSnapshot.selectedCardIDsByPlayer, {
   '1': [],
 });
 assert.equal(initialSnapshot.board.length, 49);
+assert.equal(initialSnapshot.cellEffects.length, 49);
 assert.equal(initialSnapshot.matchResult, null);
 
 await roomService.updateSelection('match-3', {
@@ -222,6 +223,7 @@ const resumedSnapshot = await gameRoomService.setReady('match-4', {
 assert.equal(resumedSnapshot.phase, 'game');
 assert.equal(resumedSnapshot.round, 2);
 assert.equal(resumedSnapshot.board.every((cell) => cell === null), true);
+assert.equal(resumedSnapshot.cellEffects.every((effects) => effects.length === 0), true);
 assert.equal(resumedSnapshot.readyByPlayer['0'], false);
 assert.equal(resumedSnapshot.readyByPlayer['1'], false);
 

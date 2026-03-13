@@ -1,5 +1,10 @@
 import Phaser from 'phaser';
-import { CAT_SPRITE_ANIMATION_FRAMES, CAT_SPRITE_FRAME_SIZE } from '@acatgame/game-core';
+import {
+  CAT_SPRITE_ANIMATION_FRAMES,
+  CAT_SPRITE_FRAME_SIZE,
+  getCardDefinition,
+  type CardAnimationVariant,
+} from '@acatgame/game-core';
 
 import { UI_THEME } from './theme.js';
 
@@ -9,8 +14,14 @@ export const PLAYER_CAT_SPRITESHEET_KEYS = {
 } as const;
 
 export const PLAYER_CAT_ANIMATION_KEYS = {
-  '0': 'player-cat-idle-0',
-  '1': 'player-cat-idle-1',
+  '0': {
+    default: 'player-cat-idle-0',
+    blocker: 'player-cat-blocker-0',
+  },
+  '1': {
+    default: 'player-cat-idle-1',
+    blocker: 'player-cat-blocker-1',
+  },
 } as const;
 
 const PLAYER_CAT_SOURCES = {
@@ -19,9 +30,12 @@ const PLAYER_CAT_SOURCES = {
 } as const;
 
 const READY_CARD_FALLBACK_PREFIX = 'ready-card-fallback-';
+const CAT_SPRITESHEET_COLUMNS = 16;
+const BLOCKER_ROW_INDEX = 3;
+const BLOCKER_ANIMATION_FRAMES = 4;
 
 export const READY_CARD_SPRITESHEET_KEY = PLAYER_CAT_SPRITESHEET_KEYS['0'];
-export const READY_CARD_ANIMATION_KEY = PLAYER_CAT_ANIMATION_KEYS['0'];
+export const READY_CARD_ANIMATION_KEY = PLAYER_CAT_ANIMATION_KEYS['0'].default;
 
 export function preloadReadyCardAssets(scene: Phaser.Scene) {
   for (const playerID of Object.keys(PLAYER_CAT_SOURCES) as Array<keyof typeof PLAYER_CAT_SOURCES>) {
@@ -40,26 +54,25 @@ export function ensurePlayerCatAnimations(scene: Phaser.Scene) {
   createFallbackFrames(scene);
 
   for (const playerID of Object.keys(PLAYER_CAT_ANIMATION_KEYS) as Array<keyof typeof PLAYER_CAT_ANIMATION_KEYS>) {
-    const animationKey = PLAYER_CAT_ANIMATION_KEYS[playerID];
+    for (const variant of Object.keys(PLAYER_CAT_ANIMATION_KEYS[playerID]) as CardAnimationVariant[]) {
+      const animationKey = PLAYER_CAT_ANIMATION_KEYS[playerID][variant];
 
-    if (scene.anims.exists(animationKey)) {
-      continue;
+      if (scene.anims.exists(animationKey)) {
+        continue;
+      }
+
+      const spritesheetKey = PLAYER_CAT_SPRITESHEET_KEYS[playerID];
+      const frames = scene.textures.exists(spritesheetKey)
+        ? scene.anims.generateFrameNumbers(spritesheetKey, getFrameRangeForVariant(variant))
+        : createFallbackFrames(scene).map((key) => ({ key }));
+
+      scene.anims.create({
+        key: animationKey,
+        frames,
+        frameRate: 8,
+        repeat: -1,
+      });
     }
-
-    const spritesheetKey = PLAYER_CAT_SPRITESHEET_KEYS[playerID];
-    const frames = scene.textures.exists(spritesheetKey)
-      ? scene.anims.generateFrameNumbers(spritesheetKey, {
-          start: 0,
-          end: CAT_SPRITE_ANIMATION_FRAMES - 1,
-        })
-      : createFallbackFrames(scene).map((key) => ({ key }));
-
-    scene.anims.create({
-      key: animationKey,
-      frames,
-      frameRate: 8,
-      repeat: -1,
-    });
   }
 }
 
@@ -79,7 +92,13 @@ export function getPlayerCatBaseTexture(scene: Phaser.Scene, playerID: string) {
 
 export function getPlayerCatAnimationKey(scene: Phaser.Scene, playerID: string) {
   ensurePlayerCatAnimations(scene);
-  return PLAYER_CAT_ANIMATION_KEYS[playerID as keyof typeof PLAYER_CAT_ANIMATION_KEYS] ?? READY_CARD_ANIMATION_KEY;
+  return PLAYER_CAT_ANIMATION_KEYS[playerID as keyof typeof PLAYER_CAT_ANIMATION_KEYS]?.default ?? READY_CARD_ANIMATION_KEY;
+}
+
+export function getCardAnimationKey(scene: Phaser.Scene, playerID: string, cardID: number | null | undefined) {
+  ensurePlayerCatAnimations(scene);
+  const variant = getCardDefinition(cardID ?? -1).visual.animation;
+  return PLAYER_CAT_ANIMATION_KEYS[playerID as keyof typeof PLAYER_CAT_ANIMATION_KEYS]?.[variant] ?? READY_CARD_ANIMATION_KEY;
 }
 
 function createFallbackFrames(scene: Phaser.Scene) {
@@ -122,4 +141,19 @@ function createFallbackFrames(scene: Phaser.Scene) {
   }
 
   return frameKeys;
+}
+
+function getFrameRangeForVariant(variant: CardAnimationVariant) {
+  if (variant === 'blocker') {
+    const start = BLOCKER_ROW_INDEX * CAT_SPRITESHEET_COLUMNS;
+    return {
+      start,
+      end: start + BLOCKER_ANIMATION_FRAMES - 1,
+    };
+  }
+
+  return {
+    start: 0,
+    end: CAT_SPRITE_ANIMATION_FRAMES - 1,
+  };
 }

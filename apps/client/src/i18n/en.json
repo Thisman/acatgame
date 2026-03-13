@@ -30,6 +30,16 @@
     "pressReady": "Press ready when you are set",
     "selectionProgress": "Choose cards {count}/{limit} and press Ready"
   },
+  "cards": {
+    "blocker": {
+      "name": "Blocker Cat",
+      "description": "After placement, blocks all 8 adjacent empty cells for 2 turns."
+    },
+    "normal": {
+      "name": "Common Cat",
+      "description": "No field mechanic."
+    }
+  },
   "game": {
     "syncing": "Syncing game...",
     "matchActive": "Match active",

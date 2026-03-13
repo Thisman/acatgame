@@ -9,6 +9,7 @@ import {
   CLICK_RACE_NUM_PLAYERS,
   READY_CARD_SELECTION_LIMIT,
 } from './constants.js';
+import { getCardDefinition, type BoardCellEffect } from './cards.js';
 import type {
   BoardCell,
   ClickRaceClientState,
@@ -33,6 +34,9 @@ const createInitialScore = (): Record<string, number> => ({
 const createEmptyBoard = () =>
   Array.from({ length: CAT_MATCH_BOARD_SIZE * CAT_MATCH_BOARD_SIZE }, () => null as BoardCell | null);
 
+const createEmptyCellEffects = () =>
+  Array.from({ length: CAT_MATCH_BOARD_SIZE * CAT_MATCH_BOARD_SIZE }, () => [] as BoardCellEffect[]);
+
 const cloneRoundResult = (result: RoundResult | null): RoundResult | null =>
   result
     ? {
@@ -49,6 +53,117 @@ const cloneMatchResult = (result: MatchResult | null): MatchResult | null =>
         draw: result.draw,
       }
     : null;
+
+const cloneCellEffect = (effect: BoardCellEffect): BoardCellEffect => {
+  switch (effect.type) {
+    case 'placementLock':
+      return {
+        ...effect,
+      };
+  }
+};
+
+const normalizeCellEffects = (cellEffects?: Array<BoardCellEffect[]> | null) => {
+  const normalized = createEmptyCellEffects();
+
+  if (!cellEffects) {
+    return normalized;
+  }
+
+  for (let index = 0; index < normalized.length; index += 1) {
+    normalized[index] = (cellEffects[index] ?? []).map(cloneCellEffect);
+  }
+
+  return normalized;
+};
+
+const decrementCellEffects = (cellEffects?: Array<BoardCellEffect[]> | null) =>
+  normalizeCellEffects(cellEffects).map((effects) =>
+    effects.flatMap((effect) => {
+      switch (effect.type) {
+        case 'placementLock': {
+          const remainingTurns = effect.remainingTurns - 1;
+
+          if (remainingTurns <= 0) {
+            return [];
+          }
+
+          return [
+            {
+              ...effect,
+              remainingTurns,
+            },
+          ];
+        }
+      }
+    }),
+  );
+
+const hasPlacementLock = (effects: BoardCellEffect[]) =>
+  effects.some((effect) => effect.type === 'placementLock' && effect.remainingTurns > 0);
+
+const applyOnPlaceMechanics = (
+  G: ClickRaceState,
+  boardIndex: number,
+  cellX: number,
+  cellY: number,
+  playerID: string,
+  cardID: number,
+) => {
+  const cardDefinition = getCardDefinition(cardID);
+
+  for (const mechanic of cardDefinition.mechanics) {
+    if (mechanic.trigger !== 'onPlace') {
+      continue;
+    }
+
+    switch (mechanic.type) {
+      case 'placementLockAura': {
+        for (let deltaY = -mechanic.radius; deltaY <= mechanic.radius; deltaY += 1) {
+          for (let deltaX = -mechanic.radius; deltaX <= mechanic.radius; deltaX += 1) {
+            if (deltaX === 0 && deltaY === 0) {
+              continue;
+            }
+
+            if (!mechanic.includeDiagonals && Math.abs(deltaX) + Math.abs(deltaY) !== 1) {
+              continue;
+            }
+
+            const targetX = cellX + deltaX;
+            const targetY = cellY + deltaY;
+
+            if (
+              targetX < 0 ||
+              targetX >= CAT_MATCH_BOARD_SIZE ||
+              targetY < 0 ||
+              targetY >= CAT_MATCH_BOARD_SIZE
+            ) {
+              continue;
+            }
+
+            const targetIndex = targetY * CAT_MATCH_BOARD_SIZE + targetX;
+
+            if (G.board[targetIndex]) {
+              continue;
+            }
+
+            G.cellEffects[targetIndex] = [
+              ...G.cellEffects[targetIndex].filter((effect) => effect.type !== 'placementLock'),
+              {
+                type: 'placementLock',
+                remainingTurns: mechanic.durationTurns,
+                sourcePlayerID: playerID,
+                sourceCardID: cardID,
+                sourceBoardIndex: boardIndex,
+              },
+            ];
+          }
+        }
+        break;
+      }
+    }
+  }
+};
 
 const fisherYatesShuffle = <T>(values: T[]) => {
   const next = [...values];
@@ -120,6 +235,7 @@ export const createGameplayState = (
 
   return {
     board: createEmptyBoard(),
+    cellEffects: createEmptyCellEffects(),
     currentRound: 1,
     roundWinsByPlayer: createInitialScore(),
     drawRounds: 0,
@@ -143,6 +259,7 @@ const buildClientState = (G: ClickRaceState, playerID?: string | null): ClickRac
 
   return {
     board: [...G.board],
+    cellEffects: normalizeCellEffects(G.cellEffects),
     currentRound: G.currentRound,
     roundWinsByPlayer: { ...G.roundWinsByPlayer },
     drawRounds: G.drawRounds,
@@ -252,6 +369,7 @@ export const createNextRoundState = (
   return {
     ...state,
     board: createEmptyBoard(),
+    cellEffects: createEmptyCellEffects(),
     currentRound: nextRound,
     roundResult: null,
     players,
@@ -296,6 +414,10 @@ const placeCatMove: MoveFn<ClickRaceState> = ({ G, ctx, events, random, playerID
     return INVALID_MOVE;
   }
 
+  if (hasPlacementLock(G.cellEffects[boardIndex] ?? [])) {
+    return INVALID_MOVE;
+  }
+
   G.board[boardIndex] = {
     playerID,
     cardID,
@@ -304,6 +426,8 @@ const placeCatMove: MoveFn<ClickRaceState> = ({ G, ctx, events, random, playerID
 
   playerState.hand[handIndex] = playerState.deck.shift() ?? null;
   playerState.placedCount += 1;
+  G.cellEffects = decrementCellEffects(G.cellEffects);
+  applyOnPlaceMechanics(G, boardIndex, cellX, cellY, playerID, cardID);
   refreshPlayerSummaries(G);
 
   const roundWon = hasWinningLine(G.board, cellX, cellY, playerID);

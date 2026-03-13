@@ -11,6 +11,11 @@ export interface CatCardView {
   border: Phaser.GameObjects.Image;
   sprite: Phaser.GameObjects.Sprite;
   label: Phaser.GameObjects.Text;
+  tooltip: Phaser.GameObjects.Container;
+  tooltipBackground: Phaser.GameObjects.Graphics;
+  tooltipTitle: Phaser.GameObjects.Text;
+  tooltipBody: Phaser.GameObjects.Text;
+  pointerInside: boolean;
 }
 
 export interface CreateCatCardOptions {
@@ -35,6 +40,8 @@ export interface RenderCatCardOptions {
   labelText?: string;
   cardSize?: number;
   spriteScale?: number;
+  tooltipTitle?: string;
+  tooltipText?: string;
 }
 
 const CAT_CARD_SIZE = 98;
@@ -80,12 +87,49 @@ export function createCatCardView(options: CreateCatCardOptions): CatCardView {
     color: '#5C4B51',
   });
   label.setOrigin(0.5);
+  const tooltipBackground = options.scene.add.graphics();
+  const tooltipTitle = options.scene.add.text(0, 0, '', {
+    fontFamily: 'Trebuchet MS',
+    fontSize: '15px',
+    fontStyle: '700',
+    color: '#FFF7DE',
+    align: 'center',
+    wordWrap: { width: 184, useAdvancedWrap: true },
+  });
+  tooltipTitle.setOrigin(0.5, 0);
+  const tooltipBody = options.scene.add.text(0, 0, '', {
+    fontFamily: 'Trebuchet MS',
+    fontSize: '13px',
+    color: '#F2EBBF',
+    align: 'center',
+    wordWrap: { width: 184, useAdvancedWrap: true },
+    lineSpacing: 4,
+  });
+  tooltipBody.setOrigin(0.5, 0);
+  const tooltip = options.scene.add.container(0, 0, [tooltipBackground, tooltipTitle, tooltipBody]);
+  tooltip.setVisible(false);
+  tooltip.setDepth(2000);
 
-  const container = options.scene.add.container(0, 0, [shadow, face, border, sprite, label, hitArea]);
+  const container = options.scene.add.container(0, 0, [shadow, face, border, sprite, label, tooltip, hitArea]);
   container.setVisible(false);
   container.setSize(CAT_CARD_SIZE, CAT_CARD_SIZE);
 
   const interactive = options.interactive ?? Boolean(options.onPress || options.onHover || options.onOut);
+  const card: CatCardView = {
+    id: options.id,
+    container,
+    hitArea,
+    shadow,
+    face,
+    border,
+    sprite,
+    label,
+    tooltip,
+    tooltipBackground,
+    tooltipTitle,
+    tooltipBody,
+    pointerInside: false,
+  };
 
   if (interactive) {
     hitArea.setInteractive({ useHandCursor: true });
@@ -103,16 +147,16 @@ export function createCatCardView(options: CreateCatCardOptions): CatCardView {
     hitArea.on('pointerout', options.onOut);
   }
 
-  return {
-    id: options.id,
-    container,
-    hitArea,
-    shadow,
-    face,
-    border,
-    sprite,
-    label,
-  };
+  hitArea.on('pointerover', () => {
+    card.pointerInside = true;
+    updateTooltipVisibility(card, true);
+  });
+  hitArea.on('pointerout', () => {
+    card.pointerInside = false;
+    updateTooltipVisibility(card, false);
+  });
+
+  return card;
 }
 
 export function renderCatCard(card: CatCardView, options: RenderCatCardOptions) {
@@ -139,8 +183,6 @@ export function renderCatCard(card: CatCardView, options: RenderCatCardOptions) 
   card.hitArea.setFillStyle(0xffffff, 0.001);
 
   if (!interactive) {
-    card.hitArea.disableInteractive();
-  } else if (disabled) {
     card.hitArea.disableInteractive();
   } else if (!card.hitArea.input) {
     card.hitArea.setInteractive({ useHandCursor: true });
@@ -174,6 +216,13 @@ export function renderCatCard(card: CatCardView, options: RenderCatCardOptions) 
   card.label.setVisible(Boolean(options.labelText));
   card.label.setPosition(0, cardSize / 2 - 14);
   card.label.setAlpha(disabled ? 0.56 : 0.82);
+
+  updateTooltip(card, {
+    cardSize,
+    title: options.tooltipTitle ?? '',
+    text: options.tooltipText ?? '',
+    visible: options.visible && interactive && card.pointerInside,
+  });
 }
 
 function generateBorderTexture(scene: Phaser.Scene, key: string, lineWidth: number) {
@@ -191,4 +240,54 @@ function getBorderTint(selected: boolean, hovered: boolean) {
   }
 
   return hovered ? 0x5f978c : UI_THEME.cardBorderLightNumber;
+}
+
+function updateTooltip(
+  card: CatCardView,
+  options: {
+    cardSize: number;
+    title: string;
+    text: string;
+    visible: boolean;
+  },
+) {
+  const hasContent = Boolean(options.title || options.text);
+
+  card.tooltipTitle.setText(options.title);
+  card.tooltipBody.setText(options.text);
+  card.tooltipBody.setPosition(0, options.title ? card.tooltipTitle.height + 8 : 0);
+
+  if (!hasContent) {
+    card.tooltip.setVisible(false);
+    return;
+  }
+
+  const paddingX = 12;
+  const paddingY = 10;
+  const contentWidth = Math.max(
+    options.title ? card.tooltipTitle.width : 0,
+    options.text ? card.tooltipBody.width : 0,
+  );
+  const contentHeight =
+    (options.title ? card.tooltipTitle.height : 0) +
+    (options.title && options.text ? 8 : 0) +
+    (options.text ? card.tooltipBody.height : 0);
+  const width = Math.max(120, Math.ceil(contentWidth + paddingX * 2));
+  const height = Math.ceil(contentHeight + paddingY * 2);
+  const halfWidth = width / 2;
+
+  card.tooltipBackground.clear();
+  card.tooltipBackground.fillStyle(0x5c4b51, 0.96);
+  card.tooltipBackground.lineStyle(2, UI_THEME.accentSoftNumber, 0.95);
+  card.tooltipBackground.fillRoundedRect(-halfWidth, 0, width, height, 12);
+  card.tooltipBackground.strokeRoundedRect(-halfWidth, 0, width, height, 12);
+
+  card.tooltipTitle.setPosition(0, paddingY);
+  card.tooltipBody.setPosition(0, paddingY + (options.title ? card.tooltipTitle.height + 8 : 0));
+  card.tooltip.setPosition(0, -options.cardSize / 2 - height - 10);
+  updateTooltipVisibility(card, options.visible);
+}
+
+function updateTooltipVisibility(card: CatCardView, visible: boolean) {
+  card.tooltip.setVisible(visible);
 }

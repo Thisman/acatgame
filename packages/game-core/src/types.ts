@@ -1,3 +1,5 @@
+import type { BoardCellEffect } from './cards.js';
+
 export type RoomStatus = 'waiting' | 'active' | 'gameover';
 export type RoomPhase = 'waiting' | 'ready' | 'game' | 'roundover' | 'gameover';
 
@@ -39,6 +41,7 @@ export interface LocalPlayerState {
 
 export interface ClickRaceState {
   board: Array<BoardCell | null>;
+  cellEffects: Array<BoardCellEffect[]>;
   currentRound: number;
   roundWinsByPlayer: Record<string, number>;
   drawRounds: number;
@@ -75,6 +78,7 @@ export interface RoomSnapshot {
   currentPlayer: string | null;
   winner: string | null;
   board: Array<BoardCell | null>;
+  cellEffects: Array<BoardCellEffect[]>;
   round: number;
   roundWinsByPlayer: Record<string, number>;
   drawRounds: number;

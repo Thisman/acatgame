@@ -6,6 +6,7 @@ import {
   CAT_MATCH_MAX_ROUNDS,
   READY_CARD_SELECTION_LIMIT,
 } from '../src/constants.js';
+import { getCardDefinition } from '../src/cards.js';
 import { ClickRaceGame, createGameplayState, createNextRoundState, getRoundStarter } from '../src/game.js';
 import type { ClickRaceState } from '../src/types.js';
 
@@ -28,7 +29,7 @@ const placeCat = ClickRaceGame.moves?.placeCat as (
   cellX: number,
   cellY: number,
   handIndex: number,
-) => void;
+) => void | 'INVALID_MOVE';
 
 test('createGameplayState creates a round with 5 cards in hand and 10 in deck', () => {
   const state = createGameplayState(
@@ -40,6 +41,7 @@ test('createGameplayState creates a round with 5 cards in hand and 10 in deck', 
   );
 
   assert.equal(state.board.length, CAT_MATCH_BOARD_SIZE * CAT_MATCH_BOARD_SIZE);
+  assert.equal(state.cellEffects.length, CAT_MATCH_BOARD_SIZE * CAT_MATCH_BOARD_SIZE);
   assert.equal(state.currentRound, 1);
   assert.deepEqual(state.players['0'].hand, [0, 1, 2, 3, 4]);
   assert.equal(state.players['0'].deck.length, 10);
@@ -81,6 +83,200 @@ test('placeCat fills a cell and refills the same hand slot', () => {
   assert.equal(state.players['0'].hand[1], 5);
   assert.equal(state.players['0'].deck.length, 9);
   assert.equal(nextPlayer, '1');
+});
+
+test('blocker card metadata is exposed through the catalog', () => {
+  const blockerCard = getCardDefinition(0);
+  const normalCard = getCardDefinition(3);
+
+  assert.equal(blockerCard.visual.animation, 'blocker');
+  assert.equal(blockerCard.mechanics[0]?.type, 'placementLockAura');
+  assert.equal(normalCard.visual.animation, 'default');
+  assert.equal(normalCard.mechanics.length, 0);
+});
+
+test('placing a blocker card locks all adjacent empty cells for two turns', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+  state.board[17] = { playerID: '1', cardID: 9, move: 1 };
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 2 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+  );
+
+  for (const index of [16, 18, 23, 25, 30, 31, 32]) {
+    assert.deepEqual(state.cellEffects[index], [
+      {
+        type: 'placementLock',
+        remainingTurns: 2,
+        sourcePlayerID: '0',
+        sourceCardID: 0,
+        sourceBoardIndex: 24,
+      },
+    ]);
+  }
+
+  assert.equal(state.cellEffects[17].length, 0);
+});
+
+test('a blocked cell rejects placement until the second following turn finishes', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 1 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    3,
+    3,
+    0,
+  );
+
+  const invalidAttempt = placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '1', turn: 2 },
+      playerID: '1',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    2,
+    2,
+    0,
+  );
+
+  assert.equal(invalidAttempt, 'INVALID_MOVE');
+  assert.equal(state.cellEffects[16][0]?.remainingTurns, 2);
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '1', turn: 2 },
+      playerID: '1',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    0,
+    0,
+    3,
+  );
+
+  assert.equal(state.cellEffects[16][0]?.remainingTurns, 1);
+
+  const stillBlockedAttempt = placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 3 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    2,
+    2,
+    1,
+  );
+
+  assert.equal(stillBlockedAttempt, 'INVALID_MOVE');
+  assert.equal(state.cellEffects[16][0]?.remainingTurns, 1);
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 3 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    6,
+    6,
+    1,
+  );
+
+  assert.equal(state.cellEffects[16].length, 0);
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '1', turn: 4 },
+      playerID: '1',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    2,
+    2,
+    1,
+  );
+
+  assert.equal(state.board[16]?.playerID, '1');
+});
+
+test('reapplying a placement lock replaces the previous lock on the same cell', () => {
+  const state = createGameplayState(
+    {
+      '0': selection,
+      '1': selection,
+    },
+    orderedShuffle,
+  );
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '0', turn: 1 },
+      playerID: '0',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    2,
+    2,
+    0,
+  );
+
+  placeCat(
+    {
+      G: state,
+      ctx: { currentPlayer: '1', turn: 2 },
+      playerID: '1',
+      events: { endTurn() {} },
+      random: orderedShuffle,
+    },
+    4,
+    4,
+    0,
+  );
+
+  assert.deepEqual(state.cellEffects[24], [
+    {
+      type: 'placementLock',
+      remainingTurns: 2,
+      sourcePlayerID: '1',
+      sourceCardID: 0,
+      sourceBoardIndex: 32,
+    },
+  ]);
 });
 
 test('winning a round stores the result and waits for the next round reset', () => {
@@ -274,6 +470,7 @@ test('createNextRoundState clears the board and deals fresh hands for the next r
 
   assert.equal(nextState.currentRound, 2);
   assert.equal(nextState.board.every((cell) => cell === null), true);
+  assert.equal(nextState.cellEffects.every((effects) => effects.length === 0), true);
   assert.equal(nextState.roundResult, null);
   assert.equal(nextState.roundWinsByPlayer['0'], 1);
   assert.equal(nextState.drawRounds, 1);

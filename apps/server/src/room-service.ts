@@ -1,4 +1,5 @@
 import {
+  CAT_MATCH_BOARD_SIZE,
   CLICK_RACE_GAME_NAME,
   CLICK_RACE_NUM_PLAYERS,
   ERROR_CODES,
@@ -239,6 +240,9 @@ export class RoomService {
     const storedState = await this.getStoredMatchState(matchID);
     const forfeitWinner = this.registry.getForfeitWinner(matchID);
     const board = storedState?.G?.board ?? [];
+    const cellEffects =
+      storedState?.G?.cellEffects ??
+      Array.from({ length: Math.max(board.length, CAT_MATCH_BOARD_SIZE * CAT_MATCH_BOARD_SIZE) }, () => []);
     const roundWinsByPlayer = storedState?.G?.roundWinsByPlayer ?? { '0': 0, '1': 0 };
     const drawRounds = storedState?.G?.drawRounds ?? 0;
     const roundResult = storedState?.G?.roundResult ?? null;
@@ -281,6 +285,7 @@ export class RoomService {
       currentPlayer: storedState?.ctx?.currentPlayer ?? null,
       winner,
       board,
+      cellEffects,
       round: storedState?.G?.currentRound ?? 1,
       roundWinsByPlayer,
       drawRounds,
