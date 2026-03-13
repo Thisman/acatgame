@@ -1,0 +1,27 @@
+services:
+  server:
+    build:
+      context: .
+      target: server-runtime
+    environment:
+      PORT: 8000
+      PUBLIC_SERVER_URL: ${PUBLIC_SERVER_URL:-http://localhost:8000}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:4173}
+    ports:
+      - "8000:8000"
+    volumes:
+      - server-data:/app/.data
+
+  client:
+    build:
+      context: .
+      target: client-runtime
+      args:
+        VITE_SERVER_URL: ${VITE_SERVER_URL:-http://localhost:8000}
+    depends_on:
+      - server
+    ports:
+      - "4173:80"
+
+volumes:
+  server-data:
