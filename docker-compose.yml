@@ -17,7 +17,7 @@ services:
       context: .
       target: client-runtime
       args:
-        VITE_SERVER_URL: ${VITE_SERVER_URL:-http://localhost:8000}
+        VITE_SERVER_URL: ${VITE_SERVER_URL:-}
     depends_on:
       - server
     ports:

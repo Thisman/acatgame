@@ -58,7 +58,7 @@ export class RoomController {
   private heartbeatTimer: number | null = null;
   private snapshotTimer: number | null = null;
 
-  constructor(private readonly serverUrl: string) {}
+  constructor(private readonly serverUrl = '') {}
 
   subscribe(listener: () => void) {
     this.listeners.add(listener);
@@ -288,7 +288,7 @@ export class RoomController {
         matchID: this.session.matchID,
         playerID: this.session.playerID,
         credentials: this.session.credentials,
-        multiplayer: SocketIO({ server: this.serverUrl }),
+        multiplayer: this.serverUrl ? SocketIO({ server: this.serverUrl }) : SocketIO(),
         debug: false,
       });
 
